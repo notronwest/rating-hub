@@ -298,6 +298,62 @@ async function findOrCreatePlayer(
   return newPlayer.id;
 }
 
+async function findOrCreateSession(
+  orgUuid: string,
+  playedAt: string | null,
+  playerIds: (string | null)[],
+  playerNames: string[],
+): Promise<string | null> {
+  if (!playedAt) return null;
+  const validIds = playerIds.filter((id): id is string => id != null);
+  if (validIds.length === 0) return null;
+
+  const playedDate = playedAt.slice(0, 10); // "YYYY-MM-DD"
+  const playerGroupKey = [...validIds].sort().join(",");
+
+  // Try to find existing session
+  const { data: existing } = await supabase
+    .from("sessions")
+    .select("id")
+    .eq("org_id", orgUuid)
+    .eq("played_date", playedDate)
+    .eq("player_group_key", playerGroupKey)
+    .maybeSingle();
+
+  if (existing) return existing.id;
+
+  // Generate label: "Ron-Steve-Mike-Jeff 2026-03-20"
+  const firstNames = playerNames
+    .map((n) => n.split(" ")[0])
+    .sort();
+  const label = `${firstNames.join("-")} ${playedDate}`;
+
+  const { data: created, error } = await supabase
+    .from("sessions")
+    .insert({
+      org_id: orgUuid,
+      played_date: playedDate,
+      player_group_key: playerGroupKey,
+      label,
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    // Might be a race condition — try to fetch again
+    const { data: retry } = await supabase
+      .from("sessions")
+      .select("id")
+      .eq("org_id", orgUuid)
+      .eq("played_date", playedDate)
+      .eq("player_group_key", playerGroupKey)
+      .maybeSingle();
+    return retry?.id ?? null;
+  }
+
+  return created.id;
+}
+
 async function resolveGame(
   orgUuid: string,
   videoId: string,
@@ -602,6 +658,22 @@ export async function importCompactJson(
     onProgress(
       `[${filename}] Player ${i}: ${displayName} (${won ? "W" : "L"})`,
     );
+  }
+
+  // Assign game to a session
+  const playedAtIso = ses.ge ? new Date(ses.ge * 1000).toISOString() : null;
+  const playerNamesList = (players ?? [])
+    .filter((p): p is NonNullable<typeof p> => p != null && !!p.name)
+    .map((p) => p.name!.trim());
+  const sessionId = await findOrCreateSession(
+    orgUuid,
+    playedAtIso,
+    playerIds,
+    playerNamesList,
+  );
+  if (sessionId) {
+    await supabase.from("games").update({ session_id: sessionId }).eq("id", gameId);
+    onProgress(`[${filename}] Assigned to session ${sessionId}`);
   }
 
   // Insert rallies

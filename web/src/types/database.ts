@@ -45,7 +45,17 @@ export interface Game {
   pbvision_bucket: string | null;
   raw_game_data: Record<string, unknown> | null;
   highlights: HighlightEvent[] | null;
+  session_id: string | null;
   imported_at: string;
+  created_at: string;
+}
+
+export interface Session {
+  id: string;
+  org_id: string;
+  played_date: string;
+  player_group_key: string;
+  label: string | null;
   created_at: string;
 }
 

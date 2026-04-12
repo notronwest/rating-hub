@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { supabase } from "../supabase";
 import type { Game, GamePlayer, GamePlayerShotType, GamePlayerCourtZone } from "../types/database";
+import { computeHighlights, GameHighlightsFull, type GameHighlightData } from "../components/GameHighlights";
 
 interface PlayerCard {
   gp: GamePlayer;
@@ -13,8 +14,13 @@ interface PlayerCard {
 
 export default function GameDetailPage() {
   const { orgId, gameId } = useParams();
+  const [searchParams] = useSearchParams();
+  const fromPlayer = searchParams.get("from") === "player";
+  const playerSlug = searchParams.get("slug");
   const [game, setGame] = useState<Game | null>(null);
   const [playerCards, setPlayerCards] = useState<PlayerCard[]>([]);
+  const [rallies, setRallies] = useState<{ shot_count: number | null }[]>([]);
+  const [allShotTypes, setAllShotTypes] = useState<GamePlayerShotType[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -51,16 +57,17 @@ export default function GameDetailPage() {
         (players ?? []).map((p) => [p.id, { name: p.display_name, slug: p.slug }]),
       );
 
-      // Fetch shot types and court zones
-      const { data: shotTypes } = await supabase
-        .from("game_player_shot_types")
-        .select("*")
-        .eq("game_id", gameId);
+      // Fetch shot types, court zones, and rallies
+      const [stRes, czRes, rallyRes] = await Promise.all([
+        supabase.from("game_player_shot_types").select("*").eq("game_id", gameId),
+        supabase.from("game_player_court_zones").select("*").eq("game_id", gameId),
+        supabase.from("rallies").select("shot_count").eq("game_id", gameId),
+      ]);
 
-      const { data: courtZones } = await supabase
-        .from("game_player_court_zones")
-        .select("*")
-        .eq("game_id", gameId);
+      const shotTypes = stRes.data;
+      const courtZones = czRes.data;
+      setRallies(rallyRes.data ?? []);
+      setAllShotTypes(shotTypes ?? []);
 
       const cards: PlayerCard[] = gps.map((gp) => ({
         gp,
@@ -75,6 +82,24 @@ export default function GameDetailPage() {
     })();
   }, [gameId]);
 
+  // Compute highlights (hooks must be called before early returns)
+  const highlightData: GameHighlightData = useMemo(() => {
+    if (!game) return { gameId: "", gameName: "", rallies: [], players: [], shotTypes: [] };
+    return {
+      gameId: game.id,
+      gameName: game.session_name || game.pbvision_video_id,
+      rallies,
+      players: playerCards.map((c) => ({
+        playerName: c.name,
+        shotCount: c.gp.shot_count,
+        shotAccuracy: c.gp.shot_accuracy as { in?: number; net?: number; out?: number } | null,
+      })),
+      shotTypes: allShotTypes,
+    };
+  }, [game, rallies, playerCards, allShotTypes]);
+
+  const highlights = useMemo(() => computeHighlights(highlightData), [highlightData]);
+
   if (loading) return <p>Loading…</p>;
   if (!game) return <p>Game not found.</p>;
 
@@ -84,8 +109,18 @@ export default function GameDetailPage() {
 
   return (
     <div>
+      {/* Back link (only when not in player context — breadcrumb handles that) */}
+      {!fromPlayer && game.session_id && (
+        <Link
+          to={`/org/${orgId}/sessions/${game.session_id}`}
+          style={{ fontSize: 13, color: "#888", textDecoration: "none" }}
+        >
+          &larr; Back to session
+        </Link>
+      )}
+
       {/* Game header */}
-      <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>
+      <h2 style={{ fontSize: 20, fontWeight: 700, marginTop: game.session_id ? 8 : 0, marginBottom: 4 }}>
         {game.session_name || game.pbvision_video_id}
       </h2>
       <div style={{ display: "flex", gap: 20, fontSize: 14, color: "#666", marginBottom: 24 }}>
@@ -98,6 +133,9 @@ export default function GameDetailPage() {
         {game.scoring_type && <span>{game.scoring_type}</span>}
         {game.total_rallies && <span>{game.total_rallies} rallies</span>}
       </div>
+
+      {/* Highlights */}
+      {highlights.length > 0 && <GameHighlightsFull highlights={highlights} />}
 
       {/* Teams */}
       {[team0, team1].map((team, teamIdx) => (

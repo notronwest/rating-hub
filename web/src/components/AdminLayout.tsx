@@ -1,8 +1,9 @@
 import { NavLink, Outlet, useParams } from "react-router-dom";
+import PlayerContextBar from "./PlayerContextBar";
 
 const NAV_ITEMS = [
   { to: "players", label: "Players" },
-  { to: "games", label: "Games" },
+  { to: "sessions", label: "Sessions" },
   { to: "import", label: "Import" },
 ];
 
@@ -67,6 +68,7 @@ export default function AdminLayout() {
 
       {/* Main content */}
       <main style={{ flex: 1, padding: 24, overflow: "auto" }}>
+        <PlayerContextBar />
         <Outlet />
       </main>
     </div>
