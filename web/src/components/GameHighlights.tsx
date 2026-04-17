@@ -90,17 +90,8 @@ export function computeHighlights(data: GameHighlightData): HighlightItem[] {
     const pct =
       (best3rd.outcome_stats as Record<string, number> | null)
         ?.success_percentage;
-    const playerName =
-      data.players.find((_, idx) =>
-        data.shotTypes.some(
-          (st) =>
-            st.player_id === best3rd.player_id &&
-            st.shot_type === "third_drops",
-        ),
-      )?.playerName ?? "";
-    // Find the actual player name by player_id
-    const matchedPlayer = data.players.find((p) => {
-      // We need to match by checking shotTypes for this player_id
+    // Find the player name by player_id
+    const matchedPlayer = data.players.find(() => {
       return data.shotTypes.some(
         (st) =>
           st.player_id === best3rd.player_id && st.shot_type === "third_drops",
@@ -110,7 +101,7 @@ export function computeHighlights(data: GameHighlightData): HighlightItem[] {
       highlights.push({
         label: "Best 3rd Shot %",
         value: `${pct.toFixed(0)}%`,
-        detail: matchedPlayer?.playerName ?? playerName,
+        detail: matchedPlayer?.playerName ?? "",
       });
     }
   }

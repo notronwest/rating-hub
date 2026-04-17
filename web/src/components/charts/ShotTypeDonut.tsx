@@ -46,7 +46,7 @@ export default function ShotTypeDonut({ shotSelection }: Props) {
             startAngle={90}
             endAngle={-270}
             stroke="none"
-            label={({ name, value }) => `${value}%`}
+            label={({ value }) => `${value}%`}
           >
             {data.map((entry, i) => (
               <Cell key={i} fill={entry.color} />

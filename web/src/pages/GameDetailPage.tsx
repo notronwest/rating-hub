@@ -16,7 +16,6 @@ export default function GameDetailPage() {
   const { orgId, gameId } = useParams();
   const [searchParams] = useSearchParams();
   const fromPlayer = searchParams.get("from") === "player";
-  const playerSlug = searchParams.get("slug");
   const [game, setGame] = useState<Game | null>(null);
   const [playerCards, setPlayerCards] = useState<PlayerCard[]>([]);
   const [rallies, setRallies] = useState<{ shot_count: number | null }[]>([]);
@@ -256,9 +255,9 @@ function PlayerGameCard({
 
           {/* Shot quality / selection / accuracy */}
           <div style={{ display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 16 }}>
-            {gp.shot_quality && <StatBlock title="Shot Quality" data={gp.shot_quality as Record<string, number>} pct />}
-            {gp.shot_selection && <StatBlock title="Shot Selection" data={gp.shot_selection as Record<string, number>} pct />}
-            {gp.shot_accuracy && <StatBlock title="Shot Accuracy" data={gp.shot_accuracy as Record<string, number>} pct />}
+            {gp.shot_quality && <StatBlock title="Shot Quality" data={gp.shot_quality as unknown as Record<string, number>} pct />}
+            {gp.shot_selection && <StatBlock title="Shot Selection" data={gp.shot_selection as unknown as Record<string, number>} pct />}
+            {gp.shot_accuracy && <StatBlock title="Shot Accuracy" data={gp.shot_accuracy as unknown as Record<string, number>} pct />}
           </div>
 
           {/* Shot type breakdowns */}
