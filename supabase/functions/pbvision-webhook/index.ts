@@ -142,6 +142,7 @@ async function importCompactJson(
   orgSlug: string,
   // deno-lint-ignore no-explicit-any
   json: any,
+  sessionId: string | null,
 ): Promise<ImportResult> {
   const orgUuid = await resolveOrg(supabase, orgSlug);
   const data = json.data?.ses ? json.data : json;
@@ -156,6 +157,7 @@ async function importCompactJson(
 
   const gameRow = {
     org_id: orgUuid,
+    session_id: sessionId,
     pbvision_video_id: ses.vid,
     session_index: ses.si ?? 0,
     session_name: ses.name ?? null,
@@ -388,7 +390,7 @@ Deno.serve(async (req) => {
       const json = await downloadInsights(videoId, sessionNum);
       if (!json) break;
 
-      const result = await importCompactJson(supabase, ORG_SLUG, json);
+      const result = await importCompactJson(supabase, ORG_SLUG, json, sessionId ?? null);
       results.push(result);
     }
 
