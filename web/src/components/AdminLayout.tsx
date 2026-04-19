@@ -1,7 +1,9 @@
 import { NavLink, Outlet, useParams } from "react-router-dom";
 import PlayerContextBar from "./PlayerContextBar";
+import { useAuth } from "../auth/AuthProvider";
+import { useIsCoach } from "../auth/useOrgRole";
 
-const NAV_ITEMS = [
+const BASE_NAV = [
   { to: "players", label: "Players" },
   { to: "sessions", label: "Sessions" },
   { to: "import", label: "Import" },
@@ -9,6 +11,12 @@ const NAV_ITEMS = [
 
 export default function AdminLayout() {
   const { orgId } = useParams();
+  const { user, signOut } = useAuth();
+  const isCoach = useIsCoach(orgId);
+
+  const navItems = isCoach
+    ? [...BASE_NAV, { to: "coach", label: "Coach" }]
+    : BASE_NAV;
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", fontFamily: "system-ui" }}>
@@ -20,6 +28,8 @@ export default function AdminLayout() {
           background: "#fafafa",
           padding: "20px 0",
           flexShrink: 0,
+          display: "flex",
+          flexDirection: "column",
         }}
       >
         <div
@@ -37,7 +47,7 @@ export default function AdminLayout() {
           </div>
         </div>
 
-        {NAV_ITEMS.map((item) => (
+        {navItems.map((item) => (
           <NavLink
             key={item.to}
             to={`/org/${orgId}/${item.to}`}
@@ -53,10 +63,88 @@ export default function AdminLayout() {
             })}
           >
             {item.label}
+            {item.to === "coach" && (
+              <span
+                style={{
+                  marginLeft: 6,
+                  fontSize: 9,
+                  padding: "2px 5px",
+                  background: "#1a73e8",
+                  color: "#fff",
+                  borderRadius: 3,
+                  verticalAlign: "middle",
+                  letterSpacing: 0.5,
+                }}
+              >
+                NEW
+              </span>
+            )}
           </NavLink>
         ))}
 
-        <div style={{ padding: "16px 20px 0", borderTop: "1px solid #e2e2e2", marginTop: 16 }}>
+        <div style={{ flex: 1 }} />
+
+        {/* User + sign out */}
+        {user ? (
+          <div style={{ padding: "12px 20px", borderTop: "1px solid #e2e2e2" }}>
+            <div style={{ fontSize: 11, color: "#999", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>
+              Signed in as
+            </div>
+            <div
+              style={{
+                fontSize: 12,
+                color: "#333",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                marginBottom: 6,
+              }}
+              title={user.email ?? ""}
+            >
+              {user.email}
+              {isCoach && (
+                <span
+                  style={{
+                    marginLeft: 6,
+                    fontSize: 10,
+                    padding: "1px 5px",
+                    background: "#e8f0fe",
+                    color: "#1a73e8",
+                    borderRadius: 3,
+                    fontWeight: 600,
+                  }}
+                >
+                  COACH
+                </span>
+              )}
+            </div>
+            <button
+              onClick={signOut}
+              style={{
+                fontSize: 11,
+                color: "#888",
+                background: "none",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+                textDecoration: "underline",
+              }}
+            >
+              Sign out
+            </button>
+          </div>
+        ) : (
+          <div style={{ padding: "12px 20px", borderTop: "1px solid #e2e2e2" }}>
+            <NavLink
+              to="/login"
+              style={{ fontSize: 12, color: "#1a73e8", textDecoration: "none" }}
+            >
+              Sign in
+            </NavLink>
+          </div>
+        )}
+
+        <div style={{ padding: "12px 20px", borderTop: "1px solid #e2e2e2" }}>
           <NavLink
             to="/"
             style={{ fontSize: 12, color: "#888", textDecoration: "none" }}

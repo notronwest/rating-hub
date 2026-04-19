@@ -120,6 +120,22 @@ export interface Rally {
   player_positions: Record<string, unknown> | null;
 }
 
+export interface RallyShot {
+  id: string;
+  rally_id: string;
+  shot_index: number;
+  start_ms: number;
+  end_ms: number;
+  player_index: number | null;
+  shot_type: string | null;
+  stroke_type: string | null;
+  stroke_side: string | null;
+  vertical_type: string | null;
+  quality: number | null;
+  is_final: boolean;
+  raw_data: Record<string, unknown> | null;
+}
+
 export interface PlayerRatingSnapshot {
   id: string;
   player_id: string;

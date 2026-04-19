@@ -64,17 +64,82 @@ interface CompactPlayerData {
   trends?: CompactPlayerTrends;
 }
 
+interface CompactShot {
+  pid?: number;                    // player index (0-3)
+  t?: [number, number];            // [start_ms, end_ms]
+  ss?: number;                     // stroke side: 0=left, 1=right
+  st?: number;                     // stroke type: 0=backhand, 1=forehand, 2=two-handed
+  vt?: number;                     // vertical type: 0=neutral, 1=topspin, 2=slice, 3=dig, 4=lob
+  sht?: number;                    // shot type (if present as int enum)
+  q?: { ex?: number; overall?: number };
+  tag?: Record<string, unknown>;   // tag paths like "type;serve;type;PUSH"
+  fin?: number | boolean;          // is_final
+  // boolean flags (present = true, absent = false)
+  pass?: unknown;
+  vol?: unknown;
+  po?: unknown;
+  res?: unknown;
+  spd?: unknown;
+  put?: unknown;
+}
+
 interface CompactRally {
   sms: number;
   ems: number;
   wt?: number;
-  sh?: unknown[];
+  sh?: CompactShot[];
   sc?: {
     rs?: number[];
     lb?: number;
     lcs?: number;
   };
   pls?: unknown[];
+}
+
+// Enum decoders for compact shot format
+const STROKE_SIDES = ["left", "right"] as const;
+const STROKE_TYPES = ["backhand", "forehand", "two-handed"] as const;
+const VERTICAL_TYPES = ["neutral", "topspin", "slice", "dig", "lob"] as const;
+const SHT_TYPES = [
+  "drive", "dink", "drop", "lob", "smash", "volley", "reset", "speedup",
+] as const;
+
+/**
+ * Derive a readable shot_type label from a shot's tags + flags + sht enum.
+ * Priority: explicit serve/return tag → sht enum → boolean flags → "shot".
+ */
+function deriveShotType(shot: CompactShot, shotIndex: number): string {
+  const tagKeys = Object.keys(shot.tag ?? {}).join(" ").toLowerCase();
+
+  // Check tag for serve / third / return / named types
+  if (/type;serve/.test(tagKeys)) return "serve";
+  if (shotIndex === 1) return "return";       // conventionally the 2nd shot
+  if (shotIndex === 2) {
+    // Third shot: drive/drop derived below
+  }
+
+  // Explicit boolean flags take precedence for special shots
+  if (shot.spd) return "speedup";
+  if (shot.res) return "reset";
+  if (shot.put) return "putaway";
+  if (shot.po) return "poach";
+  if (shot.pass) return "passing";
+
+  // Named type tag
+  for (const label of ["drive", "dink", "drop", "lob", "smash"]) {
+    if (new RegExp(`type;${label}\\b`).test(tagKeys)) return label;
+  }
+
+  // Integer enum if present
+  if (shot.sht != null && SHT_TYPES[shot.sht]) {
+    return SHT_TYPES[shot.sht];
+  }
+
+  if (shot.vol) return "volley";
+
+  // Fallback by position
+  if (shotIndex === 2) return "third";
+  return "shot";
 }
 
 interface CompactCoachingAdvice {
@@ -245,6 +310,7 @@ async function findOrCreatePlayer(
   displayName: string,
   onProgress: ImportProgress,
   filename: string,
+  avatarUrlValue: string | null = null,
 ): Promise<string> {
   const playerSlug = slugify(displayName);
   if (!playerSlug) throw new Error(`Invalid player name: "${displayName}"`);
@@ -252,7 +318,7 @@ async function findOrCreatePlayer(
   // Find by pbvision_names
   let { data: existing } = await supabase
     .from("players")
-    .select("id")
+    .select("id, avatar_url")
     .eq("org_id", orgUuid)
     .contains("pbvision_names", [displayName])
     .maybeSingle();
@@ -261,7 +327,7 @@ async function findOrCreatePlayer(
     // Try by slug
     const { data: bySlug } = await supabase
       .from("players")
-      .select("id, pbvision_names")
+      .select("id, pbvision_names, avatar_url")
       .eq("org_id", orgUuid)
       .eq("slug", playerSlug)
       .maybeSingle();
@@ -279,7 +345,16 @@ async function findOrCreatePlayer(
     }
   }
 
-  if (existing) return existing.id;
+  if (existing) {
+    // Fill in avatar_url if missing and we have one
+    if (avatarUrlValue && !(existing as { avatar_url: string | null }).avatar_url) {
+      await supabase
+        .from("players")
+        .update({ avatar_url: avatarUrlValue })
+        .eq("id", existing.id);
+    }
+    return existing.id;
+  }
 
   const { data: newPlayer, error } = await supabase
     .from("players")
@@ -288,6 +363,7 @@ async function findOrCreatePlayer(
       slug: playerSlug,
       display_name: displayName,
       pbvision_names: [displayName],
+      avatar_url: avatarUrlValue,
     })
     .select("id")
     .single();
@@ -572,11 +648,16 @@ export async function importCompactJson(
     }
 
     const displayName = p.name.trim();
+    const avatar =
+      p.avatar_id != null && sm.aiEngineVersion
+        ? `https://storage.googleapis.com/${sm.bucket ?? "pbv-pro"}/${ses.vid}/${sm.aiEngineVersion}/player${p.avatar_id}-0.jpg`
+        : null;
     const playerId = await findOrCreatePlayer(
       orgUuid,
       displayName,
       onProgress,
       filename,
+      avatar,
     );
     playerIds.push(playerId);
 
@@ -676,7 +757,8 @@ export async function importCompactJson(
     onProgress(`[${filename}] Assigned to session ${sessionId}`);
   }
 
-  // Insert rallies
+  // Insert rallies + shots
+  // ON DELETE CASCADE on rally_shots.rally_id handles shot cleanup.
   await supabase.from("rallies").delete().eq("game_id", gameId);
 
   const rallyRows = rallies.map((r, idx) => ({
@@ -692,14 +774,60 @@ export async function importCompactJson(
     player_positions: r.pls ?? null,
   }));
 
+  // Insert in chunks and return ids so we can link shots
+  const rallyIdByIndex = new Map<number, string>();
   for (let i = 0; i < rallyRows.length; i += 100) {
     const chunk = rallyRows.slice(i, i + 100);
-    const { error: rallyErr } = await supabase.from("rallies").insert(chunk);
+    const { data: inserted, error: rallyErr } = await supabase
+      .from("rallies")
+      .insert(chunk)
+      .select("id, rally_index");
     if (rallyErr)
       throw new Error(`Failed to insert rallies: ${rallyErr.message}`);
+    for (const row of inserted ?? []) {
+      rallyIdByIndex.set(row.rally_index, row.id);
+    }
   }
 
   onProgress(`[${filename}] Inserted ${rallyRows.length} rallies.`);
+
+  // Build and insert per-rally shots
+  const shotRows: Array<Record<string, unknown>> = [];
+  for (let rIdx = 0; rIdx < rallies.length; rIdx++) {
+    const r = rallies[rIdx];
+    const rallyId = rallyIdByIndex.get(rIdx);
+    if (!rallyId || !r.sh) continue;
+
+    for (let sIdx = 0; sIdx < r.sh.length; sIdx++) {
+      const shot = r.sh[sIdx];
+      const startMs = shot.t?.[0] ?? r.sms;
+      const endMs = shot.t?.[1] ?? r.ems;
+      shotRows.push({
+        rally_id: rallyId,
+        shot_index: sIdx,
+        start_ms: startMs,
+        end_ms: endMs,
+        player_index: shot.pid ?? null,
+        shot_type: deriveShotType(shot, sIdx),
+        stroke_type: shot.st != null ? STROKE_TYPES[shot.st] ?? null : null,
+        stroke_side: shot.ss != null ? STROKE_SIDES[shot.ss] ?? null : null,
+        vertical_type: shot.vt != null ? VERTICAL_TYPES[shot.vt] ?? null : null,
+        quality: shot.q?.ex ?? shot.q?.overall ?? null,
+        is_final: !!shot.fin,
+        raw_data: shot as Record<string, unknown>,
+      });
+    }
+  }
+
+  if (shotRows.length > 0) {
+    for (let i = 0; i < shotRows.length; i += 200) {
+      const chunk = shotRows.slice(i, i + 200);
+      const { error: shotErr } = await supabase.from("rally_shots").insert(chunk);
+      if (shotErr)
+        throw new Error(`Failed to insert rally_shots: ${shotErr.message}`);
+    }
+    onProgress(`[${filename}] Inserted ${shotRows.length} shots.`);
+  }
 
   // Refresh aggregates
   for (const pid of playerIds) {

@@ -4,6 +4,113 @@
 
 Pickleball rating hub for White Mountain Pickleball Club (WMPC). Tracks player ratings, game stats, and coaching insights from PB Vision AI-analyzed game footage.
 
+## End-to-End Session Workflow
+
+This is the canonical flow from scheduling to coach analysis. It spans two projects:
+`session-manager` (scheduling, recording, splitting, PB Vision upload) and `rating-hub` (this project:
+importing PB Vision data, visualizing, coach analysis).
+
+**The single source of truth for this flow lives here. `session-manager`'s CLAUDE.md should link back.**
+
+### Lifecycle
+
+1. **Schedule** — Players book a rating session (session-manager)
+2. **Record** — Camera captures the whole session as one video (session-manager)
+3. **Split** — Session video is split into per-game videos (session-manager)
+4. **Upload** — Game videos are uploaded to PB Vision via their Partner API (session-manager)
+5. **AI processing** — PB Vision produces insights JSON + rating + Mux playback ID (PB Vision, async)
+6. **Session init** — A `sessions` row is created in rating-hub DB (session-manager pushes)
+7. **Auto-import (partial)** — PB Vision's webhook fires when a video finishes processing →
+   rating-hub's `pbvision-webhook` Edge Function imports compact insights → creates `games`,
+   `game_players`, `rallies`, `rally_shots`, `player_rating_snapshots` rows. Players are auto-named
+   `Player 0`, `Player 1`, etc. until step 8.
+8. **Tag players on PB Vision** — A human logs into pb.vision and tags each "Player N" with a real
+   name. This updates PB Vision's Firestore; insights JSON regenerates with real names.
+9. **Refresh + enrich** — session-manager (which has pb.vision auth) pulls the final data: real
+   player names, Mux playback ID, stats.json, and pushes to rating-hub via webhook. Rating-hub
+   re-imports to replace placeholder data.
+10. **Session complete** — Coach can now analyze games on rating-hub.
+
+### Where each step lives
+
+| Step | Owner | Why |
+|---|---|---|
+| 1-4 (schedule → upload) | session-manager | Has camera pipeline + pb.vision Partner API auth |
+| 5 (AI processing) | PB Vision | Their infrastructure |
+| 6 (session init) | session-manager → rating-hub | Push via direct DB insert or webhook |
+| 7 (AFTER tagging: import compact + augmented + avatars) | rating-hub | Public PB Vision API and GCS serve all of this without auth, INCLUDING tagged player names |
+| 8 (tag players) | Human, on pb.vision UI | Only their UI supports this |
+| 9 (refresh Mux playback ID + stats.json) | session-manager → rating-hub | pb.vision auth is required for: Mux playback ID (Firestore) and stats.json (non-public) |
+| 10 (coach analysis) | rating-hub | This project |
+
+### What the public PB Vision API exposes (verified 2026-04-19)
+
+This is surprising — more is public than we initially thought. No auth required:
+
+- **Compact insights** — `GET https://api-2o2klzx4pa-uc.a.run.app/video/{videoId}/insights.json?sessionNum={n}&format=compact` (HTTP 200)
+- **Augmented insights** — same URL with `format=augmented` (HTTP 200, ~5× larger, readable field names)
+- **Tagged player names** — returned in both compact `pd[].name` and augmented `player_data[].name` AFTER tagging is complete on pb.vision. Before tagging, these are `"Player 0"` etc.
+- **Player avatar images** — `https://storage.googleapis.com/pbv-pro/{videoId}/{aiEngineVersion}/player{avatar_id}-0.jpg`. `aiEngineVersion` comes from the insights JSON's `sm.aiEngineVersion` (compact) or `serverMetadata.aiEngineVersion` (augmented). `avatar_id` comes from `pd[].avatar_id`.
+- **Poster/thumbnail** — `https://storage.googleapis.com/pbv-pro/{videoId}/poster.jpg`
+- **Insights API accepts both `sessionNum=0` and `sessionNum=1`** and returns the same data. We use 0 for consistency with the webhook's existing behavior.
+
+What's NOT public:
+
+- **`format=stats`** — returns HTTP 400 `{code, message}`. Only accessible via pb.vision login.
+- **Mux playback ID** — in pb.vision's private Firestore at `pbv-prod/videos/{vid}` under `mux.playbackId`. Required to stream the video in our Analyze page.
+- **Listing a user's videos** — no REST endpoint; requires Firestore client SDK with auth.
+
+### Why the split now makes sense
+
+- **rating-hub can fetch nearly everything it needs directly** — as long as the webhook fires AFTER tagging is complete. No session-manager participation required for compact, augmented, player names, or avatars.
+- **session-manager only needs to push Phase 2 for**: Mux playback ID (always needed for video) and stats.json (nice-to-have).
+- **session-manager must delay the initial webhook call until tagging is done** — otherwise rating-hub imports players with placeholder names ("Player 0") and then must reconcile later.
+
+### Rating-hub webhook contract (simplified — delay-until-tagged approach)
+
+Only ONE call per game from session-manager. session-manager must wait until tagging is complete
+before firing this:
+
+```
+POST /functions/v1/pbvision-webhook
+Authorization: Bearer <WEBHOOK_SECRET>
+{
+  "videoId": "abc123",
+  "sessionId": "optional-session-uuid",
+  "muxPlaybackId": "a00w01bJI01Ax..."   // optional; enables video playback
+}
+```
+
+Rating-hub then:
+1. Fetches **compact** insights from the public API → imports games, game_players, players (by real name), rallies, rally_shots, rating snapshots
+2. Fetches **augmented** insights from the public API → merges highlights + advanced stats
+3. Derives **player avatar URLs** from `aiEngineVersion` + `avatar_id` → stores on `players.avatar_url`
+4. If `muxPlaybackId` provided → saves to `games.mux_playback_id`
+
+session-manager can optionally push `statsJson` in the payload later if we decide we need the
+shot-type/court-zone breakdowns that aren't in augmented. For now we skip stats.
+
+### Player name mapping
+
+Because we delay the webhook until after tagging, player names arrive real (not "Player 0"). The
+existing `findOrCreatePlayer` logic in `lib/importPbVision.ts` matches by `pbvision_names` array
+first, then slug, and creates new players if no match. No reconciliation logic needed.
+
+If the webhook is accidentally fired before tagging, placeholder players will be created. Fix is
+to re-fire the webhook after tagging — our import is idempotent on `(org_id, videoId, sessionIndex)`,
+so the game row is reused; existing `findOrCreatePlayer` matches the new real names against
+existing players.
+
+### Current status (as of 2026-04-19)
+
+- ✅ Phase 1 webhook works (manual import via web UI; auto-webhook for camera system) — imports compact insights
+- ⬜ Webhook does NOT yet fetch augmented insights automatically (needed for highlights + advanced stats)
+- ⬜ Webhook does NOT yet derive/save player avatar URLs
+- ⬜ Webhook does NOT yet accept `muxPlaybackId` in payload
+- ⬜ session-manager has not been updated to delay the webhook until tagging is complete
+- Workaround for Mux: Coach pastes Mux playback ID manually via the `📌 PBV Grab` bookmarklet on
+  `/pbv-link?pbv=X&mux=Y`. Keep this as the fallback even after session-manager handles it.
+
 ## Tech Stack
 
 - **Frontend**: React 18 + TypeScript + Vite (SPA)

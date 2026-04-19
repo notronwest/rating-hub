@@ -9,6 +9,7 @@ import PlayStyleGauge from "../components/charts/PlayStyleGauge";
 import ServeSpeedHistogram from "../components/charts/ServeSpeedHistogram";
 import DepthDonut from "../components/charts/DepthDonut";
 import KitchenArrivalBars, { buildKitchenData } from "../components/charts/KitchenArrivalBars";
+import CoachFeedback from "../components/CoachFeedback";
 
 const RATING_CARDS: { key: string; label: string; color: string }[] = [
   { key: "serve", label: "Serve", color: "#e8710a" },
@@ -265,6 +266,9 @@ export default function PlayerDetailPage() {
           })}
         </div>
       </div>
+
+      {/* ── Coach Feedback (only renders if there's any) ── */}
+      <CoachFeedback playerId={player.id} orgId={orgId ?? ""} />
 
       {/* ── Ratings Over Time ── */}
       <div style={{ marginBottom: 28 }}>
