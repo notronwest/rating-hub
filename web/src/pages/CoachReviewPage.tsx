@@ -595,9 +595,7 @@ export default function CoachReviewPage() {
           </div>
 
           {currentLoss && (
-            <>
-            {/* Top row: smaller video on left, shot list on right */}
-            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16, alignItems: "start", marginBottom: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: 16, alignItems: "start" }}>
               {/* Left: video */}
               <div>
                 {game.mux_playback_id ? (
@@ -647,99 +645,8 @@ export default function CoachReviewPage() {
                 )}
               </div>
 
-              {/* Right: shot list (vertical) with live highlight of currently-playing shot */}
-              <div
-                style={{
-                  background: "#fff",
-                  border: "1px solid #e2e2e2",
-                  borderRadius: 10,
-                  overflow: "hidden",
-                }}
-              >
-                <div
-                  style={{
-                    padding: "10px 14px",
-                    background: "#f8f9fa",
-                    borderBottom: "1px solid #eee",
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: "#666",
-                  }}
-                >
-                  Shot sequence · {seqShots.length} shots
-                </div>
-                <div style={{ maxHeight: 420, overflowY: "auto" }}>
-                  {seqShots.map((s, i) => {
-                    const p = players.find((pp) => pp.player_index === s.player_index);
-                    const isError = s.id === currentLoss.attributedShotId;
-                    const isPlaying = currentMs >= s.start_ms && currentMs <= s.end_ms;
-                    return (
-                      <button
-                        key={s.id}
-                        onClick={() => videoRef.current?.seek(s.start_ms)}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 10,
-                          width: "100%",
-                          padding: "8px 14px",
-                          fontSize: 13,
-                          background: isPlaying ? "#e8f0fe" : isError ? "#fff5f5" : "#fff",
-                          borderTop: "none",
-                          borderBottom: "1px solid #f0f0f0",
-                          borderLeft: isPlaying
-                            ? "3px solid #1a73e8"
-                            : isError
-                            ? "3px solid #c62828"
-                            : "3px solid transparent",
-                          borderRight: "none",
-                          cursor: "pointer",
-                          textAlign: "left",
-                          fontFamily: "inherit",
-                        }}
-                      >
-                        <span
-                          style={{
-                            flexShrink: 0,
-                            width: 22,
-                            height: 22,
-                            borderRadius: "50%",
-                            background: isPlaying ? "#1a73e8" : isError ? "#c62828" : "#f0f0f0",
-                            color: isPlaying || isError ? "#fff" : "#555",
-                            fontSize: 11,
-                            fontWeight: 600,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                          }}
-                        >
-                          {i + 1}
-                        </span>
-                        <span style={{ flex: 1 }}>
-                          <div style={{ fontWeight: 500, color: "#333" }}>
-                            {s.shot_type ?? "shot"}
-                          </div>
-                          <div style={{ fontSize: 11, color: "#888" }}>
-                            {p?.display_name ?? `Player ${s.player_index}`}
-                          </div>
-                        </span>
-                        <span style={{ fontSize: 11, color: "#999", textAlign: "right" }}>
-                          {formatMs(s.start_ms)}
-                          {isError && (
-                            <div style={{ fontSize: 9, color: "#c62828", fontWeight: 700, letterSpacing: 0.5, marginTop: 2 }}>
-                              ERROR
-                            </div>
-                          )}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            {/* Full-width sequence metadata + notes below */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {/* Right: sequence + notes */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {/* Sequence header */}
                 <div
                   style={{
@@ -845,6 +752,61 @@ export default function CoachReviewPage() {
                       </button>
                     </div>
                   )}
+                  {/* Inline shot chain */}
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: 6,
+                      marginTop: 10,
+                    }}
+                  >
+                    {seqShots.map((s, i) => {
+                      const p = players.find((pp) => pp.player_index === s.player_index);
+                      const isError = s.id === currentLoss.attributedShotId;
+                      return (
+                        <div
+                          key={s.id}
+                          onClick={() => videoRef.current?.seek(s.start_ms)}
+                          style={{
+                            padding: "6px 10px",
+                            background: isError ? "#fce8e6" : "#f0f0f0",
+                            borderRadius: 6,
+                            fontSize: 12,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                            cursor: "pointer",
+                            borderLeft: isError ? "3px solid #c62828" : "3px solid transparent",
+                          }}
+                          title="Click to seek to this shot"
+                        >
+                          <span
+                            style={{
+                              width: 16,
+                              height: 16,
+                              borderRadius: "50%",
+                              background: isError ? "#c62828" : "#aaa",
+                              color: "#fff",
+                              fontSize: 10,
+                              fontWeight: 600,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}
+                          >
+                            {i + 1}
+                          </span>
+                          <span style={{ fontWeight: 500, color: "#333" }}>
+                            {s.shot_type ?? "shot"}
+                          </span>
+                          <span style={{ color: "#888" }}>
+                            · {p?.display_name.split(" ")[0] ?? `p${s.player_index}`}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {/* Notes */}
@@ -926,7 +888,7 @@ export default function CoachReviewPage() {
                   </div>
                 </div>
               </div>
-            </>
+            </div>
           )}
             </>
           )}
