@@ -15,6 +15,9 @@ import Timeline from "../components/analyze/Timeline";
 import NotesPanel from "../components/analyze/NotesPanel";
 import VideoUrlInput from "../components/analyze/VideoUrlInput";
 import ShotSequence from "../components/analyze/ShotSequence";
+import RallyStrip from "../components/analyze/RallyStrip";
+import PlayerFocusBar from "../components/analyze/PlayerFocusBar";
+import ShotTooltip from "../components/analyze/ShotTooltip";
 import type { RallyShot } from "../types/database";
 
 interface GameRow {
@@ -28,14 +31,14 @@ interface GameRow {
   team1_score: number | null;
   session_id: string | null;
   mux_playback_id: string | null;
-  highlights: Array<{ s: number; e: number; kind: string; short_description: string }> | null;
+  highlights: Array<{ rally_idx: number; s: number; e: number; kind: string; short_description: string }> | null;
 }
 
 interface GamePlayerRow {
   player_id: string;
   player_index: number;
   team: number;
-  players: { id: string; display_name: string; slug: string };
+  players: { id: string; display_name: string; slug: string; avatar_url: string | null };
 }
 
 interface RallyRow {
@@ -58,6 +61,7 @@ export default function AnalyzePage() {
     display_name: string;
     team: number;
     player_index: number;
+    avatar_url: string | null;
   }>>([]);
   const [rallies, setRallies] = useState<RallyRow[]>([]);
   const [shots, setShots] = useState<RallyShot[]>([]);
@@ -72,6 +76,11 @@ export default function AnalyzePage() {
   const [isLooping, setIsLooping] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [isPaused, setIsPaused] = useState(true);
+
+  // Filters
+  const [focusedPlayerIndex, setFocusedPlayerIndex] = useState<number | null>(null);
+  // Rally explicitly selected by clicking the rally strip (overrides "current time" rally)
+  const [selectedRallyId, setSelectedRallyId] = useState<string | null>(null);
 
   const videoRef = useRef<VideoPlayerHandle>(null);
 
@@ -94,10 +103,10 @@ export default function AnalyzePage() {
       }
       setGame(g as GameRow);
 
-      // Fetch game_players with player names
+      // Fetch game_players with player names + avatars
       const { data: gps } = await supabase
         .from("game_players")
-        .select("player_id, player_index, team, players!inner(id, display_name, slug)")
+        .select("player_id, player_index, team, players!inner(id, display_name, slug, avatar_url)")
         .eq("game_id", gameId)
         .order("player_index");
 
@@ -108,6 +117,7 @@ export default function AnalyzePage() {
             display_name: gp.players.display_name,
             team: gp.team,
             player_index: gp.player_index,
+            avatar_url: gp.players.avatar_url,
           })),
         );
       }
@@ -263,19 +273,36 @@ export default function AnalyzePage() {
 
   const posterUrl = pbvPosterUrl(game.pbvision_video_id, game.pbvision_bucket ?? "pbv-pro");
 
-  // Find the rally the video is currently inside (or just after, or the nearest one)
-  const currentRally =
+  // Explicit selection overrides time-based detection
+  const currentRally: RallyRow | null =
+    (selectedRallyId ? rallies.find((r) => r.id === selectedRallyId) : null) ??
     rallies.find((r) => currentMs >= r.start_ms && currentMs <= r.end_ms) ??
     rallies.reduce<RallyRow | null>((best, r) => {
       if (best == null) return r;
       return Math.abs(r.start_ms - currentMs) < Math.abs(best.start_ms - currentMs)
         ? r
         : best;
-    }, null);
+    }, null) ??
+    null;
 
+  // Apply player focus filter to shots shown in the sequence
   const currentRallyShots = currentRally
-    ? shots.filter((s) => s.rally_id === currentRally.id)
+    ? shots
+        .filter((s) => s.rally_id === currentRally.id)
+        .filter((s) =>
+          focusedPlayerIndex == null
+            ? true
+            : s.player_index === focusedPlayerIndex,
+        )
     : [];
+
+  // The currently "playing" shot (for the video tooltip overlay) — based on currentMs
+  const playingShot = shots.find(
+    (s) => currentMs >= s.start_ms && currentMs <= s.end_ms,
+  ) ?? null;
+  const playingShotPlayer = playingShot
+    ? players.find((p) => p.player_index === playingShot.player_index) ?? null
+    : null;
 
   return (
     <div style={{ maxWidth: 1400 }}>
@@ -298,18 +325,39 @@ export default function AnalyzePage() {
         )}
       </div>
 
+      {/* Rally strip — horizontal navigator for all rallies in this game */}
+      {rallies.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <RallyStrip
+            rallies={rallies}
+            shots={shots}
+            highlights={game.highlights ?? []}
+            activeRallyId={currentRally?.id ?? null}
+            currentMs={currentMs}
+            onRallyClick={(r) => {
+              setSelectedRallyId(r.id);
+              videoRef.current?.seek(r.start_ms);
+              setCurrentMs(r.start_ms);
+            }}
+          />
+        </div>
+      )}
+
       {/* Two-column layout */}
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20, alignItems: "start" }}>
         {/* Left: video + timeline */}
         <div>
           {game.mux_playback_id ? (
             <>
-              <VideoPlayer
-                ref={videoRef}
-                playbackId={game.mux_playback_id}
-                posterUrl={posterUrl}
-                onTimeUpdate={setCurrentMs}
-              />
+              <div style={{ position: "relative" }}>
+                <VideoPlayer
+                  ref={videoRef}
+                  playbackId={game.mux_playback_id}
+                  posterUrl={posterUrl}
+                  onTimeUpdate={setCurrentMs}
+                />
+                <ShotTooltip shot={playingShot} player={playingShotPlayer} />
+              </div>
               <Timeline
                 durationMs={duration}
                 currentMs={currentMs}
@@ -325,6 +373,15 @@ export default function AnalyzePage() {
                 Shortcuts: <kbd style={kbdStyle}>Space</kbd> play/pause ·{" "}
                 <kbd style={kbdStyle}>[</kbd> prev rally ·{" "}
                 <kbd style={kbdStyle}>]</kbd> next rally
+              </div>
+
+              {/* Player focus filter */}
+              <div style={{ marginTop: 16, paddingBottom: 10, borderBottom: "1px solid #eee" }}>
+                <PlayerFocusBar
+                  players={players}
+                  focusedPlayerIndex={focusedPlayerIndex}
+                  onFocus={setFocusedPlayerIndex}
+                />
               </div>
 
               {/* Shot sequence for the current rally */}
