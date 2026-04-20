@@ -37,6 +37,7 @@ import type { RallyShot } from "../types/database";
 import VideoPlayer, { type VideoPlayerHandle } from "../components/analyze/VideoPlayer";
 import VideoUrlInput from "../components/analyze/VideoUrlInput";
 import ShotTooltip from "../components/analyze/ShotTooltip";
+import ReasonsForLosingRally from "../components/analyze/ReasonsForLosingRally";
 
 interface GameRow {
   id: string;
@@ -45,6 +46,7 @@ interface GameRow {
   pbvision_video_id: string;
   pbvision_bucket: string | null;
   mux_playback_id: string | null;
+  scoring_type: string | null;
 }
 
 interface PlayerRow {
@@ -114,7 +116,7 @@ export default function CoachReviewPage() {
       const { data: g } = await supabase
         .from("games")
         .select(
-          "id, org_id, session_name, pbvision_video_id, pbvision_bucket, mux_playback_id",
+          "id, org_id, session_name, pbvision_video_id, pbvision_bucket, mux_playback_id, scoring_type",
         )
         .eq("id", gameId)
         .single();
@@ -890,6 +892,17 @@ export default function CoachReviewPage() {
           )}
             </>
           )}
+
+          {/* Per-player breakdown of why they lost rallies in this game */}
+          <div style={{ marginTop: 24 }}>
+            <ReasonsForLosingRally
+              rallies={rallies}
+              shots={shots}
+              players={players}
+              scoringType={game.scoring_type}
+              focusedPlayerIndex={selectedPlayer.player_index}
+            />
+          </div>
         </>
       )}
     </div>
