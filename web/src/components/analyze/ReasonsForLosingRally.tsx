@@ -1,4 +1,9 @@
 import type { RallyShot } from "../../types/database";
+import {
+  categorizeRallyLoss as sharedCategorize,
+  teamOf,
+  type ReasonId,
+} from "../../lib/rallyAnalysis";
 
 interface Rally {
   id: string;
@@ -40,17 +45,6 @@ interface Props {
  *   under side-out scoring). In rally scoring, equals Opportunities Lost.
  */
 
-type ReasonId =
-  | "missed_serve"
-  | "missed_return"
-  | "missed_3rd_drop"
-  | "net"
-  | "out"
-  | "short"
-  | "unforced"
-  | "forced"
-  | "popup";
-
 const REASONS: { id: ReasonId; label: string; icon: string; color: string }[] = [
   { id: "missed_serve", label: "Missed serves", icon: "🎾", color: "#e8710a" },
   { id: "missed_return", label: "Missed returns", icon: "↩", color: "#0d904f" },
@@ -63,76 +57,20 @@ const REASONS: { id: ReasonId; label: string; icon: string; color: string }[] = 
   { id: "popup", label: "Popups exploited", icon: "📈", color: "#29b6f6" },
 ];
 
-function teamOf(playerIndex: number | null | undefined): 0 | 1 | null {
-  if (playerIndex == null) return null;
-  return playerIndex < 2 ? 0 : 1;
-}
-
-function categorizeRallyLoss(
+function categorizeForPlayer(
   rallyShots: RallyShot[],
   losingTeam: 0 | 1,
-  /** When set, only include rallies where THIS player can be held responsible. */
   focusedPlayerIndex: number | null,
 ): ReasonId | null {
-  const finalShot = rallyShots[rallyShots.length - 1];
-  if (!finalShot) return null;
-  const raw = (finalShot.raw_data ?? {}) as {
-    err?: {
-      f?: { n?: number; out?: unknown; sh?: number };
-      uf?: number;
-      pop?: number;
-    };
-  };
-  const err = raw.err;
-  if (!err) return null;
-
-  const finalShotTeam = teamOf(finalShot.player_index);
-  const lostByFinalShot = finalShotTeam === losingTeam;
-
-  // Popup exploited: winning-team putaway off a losing-team popup. The blame
-  // goes to whoever on the losing team hit the SECOND-to-last shot (the popup).
-  if (err.pop && !lostByFinalShot) {
-    const popupShot = rallyShots[rallyShots.length - 2];
-    if (!popupShot) return null;
-    if (teamOf(popupShot.player_index) !== losingTeam) return null;
-    if (
-      focusedPlayerIndex != null &&
-      popupShot.player_index !== focusedPlayerIndex
-    ) {
-      return null;
-    }
-    return "popup";
-  }
-
-  // For non-popup losses, the losing team hit the final (faulty) shot
-  if (!lostByFinalShot) return null;
-
-  // Player focus: attribute only to the player who hit the fault
+  const r = sharedCategorize(rallyShots, losingTeam);
+  if (!r) return null;
   if (
     focusedPlayerIndex != null &&
-    finalShot.player_index !== focusedPlayerIndex
+    r.attributedShot.player_index !== focusedPlayerIndex
   ) {
     return null;
   }
-
-  // Shot-type-specific buckets take priority
-  if (finalShot.shot_type === "serve") return "missed_serve";
-  if (finalShot.shot_type === "return") return "missed_return";
-  if (
-    finalShot.shot_index === 2 &&
-    (finalShot.shot_type === "drop" ||
-      finalShot.shot_type === "third" ||
-      finalShot.shot_type === "third_drops")
-  ) {
-    return "missed_3rd_drop";
-  }
-
-  // Otherwise categorize by error detail
-  if (err.f?.n) return "net";
-  if (err.f?.out) return "out";
-  if (err.f?.sh) return "short";
-  if (err.uf === 1) return "unforced";
-  return "forced";
+  return r.reason;
 }
 
 type Counts = Record<string, { opps: number; pts: number }>;
@@ -184,7 +122,7 @@ export default function ReasonsForLosingRally({
 
     const pointScored = !isSideOut || servingTeam === rally.winning_team;
 
-    const reason = categorizeRallyLoss(
+    const reason = categorizeForPlayer(
       rallyShots,
       losingTeam,
       focusedPlayerIndex,

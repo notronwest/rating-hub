@@ -9,6 +9,7 @@ import GameDetailPage from "./pages/GameDetailPage";
 import ImportPage from "./pages/ImportPage";
 import LoginPage from "./pages/LoginPage";
 import AnalyzePage from "./pages/AnalyzePage";
+import CoachReviewPage from "./pages/CoachReviewPage";
 import CoachDashboardPage from "./pages/CoachDashboardPage";
 import PbvLinkPage from "./pages/PbvLinkPage";
 import RequireCoach from "./auth/RequireCoach";
@@ -34,6 +35,7 @@ export default function App() {
         <Route element={<RequireCoach />}>
           <Route path="coach" element={<CoachDashboardPage />} />
           <Route path="games/:gameId/analyze" element={<AnalyzePage />} />
+          <Route path="games/:gameId/coach-review" element={<CoachReviewPage />} />
         </Route>
       </Route>
 
