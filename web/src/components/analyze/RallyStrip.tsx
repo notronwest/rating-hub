@@ -82,33 +82,33 @@ export default function RallyStrip({
   return (
     <div
       style={{
-        background: "#1a1a1a",
-        borderRadius: 10,
-        padding: "10px 12px",
-        overflow: "hidden",
+        background: "#fff",
+        border: "1px solid #e2e2e2",
+        borderRadius: 12,
+        padding: "12px 14px",
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-        <div style={{ display: "flex", gap: 14, fontSize: 11, color: "#aaa" }}>
-          <Legend color="#60a5fa" label="Team 0 (far)" />
-          <Legend color="#4ade80" label="Team 1 (near)" />
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <div style={{ display: "flex", gap: 14, fontSize: 11, color: "#666" }}>
+          <Legend color="#1a73e8" label="Team 0 (far)" />
+          <Legend color="#4caf50" label="Team 1 (near)" />
           <span style={{ color: "#888" }}>🔥 firefight</span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 11, color: "#888" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 11, color: "#666" }}>
           <button
             onClick={onToggleRallyLoop}
             title="When on, clicking a rally plays it on repeat until you select something else"
             style={{
-              padding: "3px 9px",
+              padding: "4px 10px",
               fontSize: 11,
               fontWeight: rallyLoop ? 700 : 400,
-              borderTop: `1px solid ${rallyLoop ? "#60a5fa" : "#444"}`,
-              borderBottom: `1px solid ${rallyLoop ? "#60a5fa" : "#444"}`,
-              borderLeft: `1px solid ${rallyLoop ? "#60a5fa" : "#444"}`,
-              borderRight: `1px solid ${rallyLoop ? "#60a5fa" : "#444"}`,
+              borderTop: `1px solid ${rallyLoop ? "#1a73e8" : "#ddd"}`,
+              borderBottom: `1px solid ${rallyLoop ? "#1a73e8" : "#ddd"}`,
+              borderLeft: `1px solid ${rallyLoop ? "#1a73e8" : "#ddd"}`,
+              borderRight: `1px solid ${rallyLoop ? "#1a73e8" : "#ddd"}`,
               borderRadius: 4,
-              background: rallyLoop ? "#1e3a8a" : "transparent",
-              color: rallyLoop ? "#fff" : "#aaa",
+              background: rallyLoop ? "#1a73e8" : "#fff",
+              color: rallyLoop ? "#fff" : "#555",
               cursor: "pointer",
               fontFamily: "inherit",
             }}
@@ -162,27 +162,27 @@ export default function RallyStrip({
                 gap: 3,
                 padding: "6px 0",
                 minHeight: 120,
-                borderTop: isActive ? "1px solid #3b82f6" : "1px solid #2a2a2a",
-                borderBottom: isActive ? "1px solid #3b82f6" : "1px solid #2a2a2a",
-                borderLeft: isActive ? "1px solid #3b82f6" : isPlaying ? "1px solid #4ade80" : "1px solid transparent",
-                borderRight: isActive ? "1px solid #3b82f6" : isPlaying ? "1px solid #4ade80" : "1px solid transparent",
+                borderTop: `1px solid ${isActive ? "#1a73e8" : "#eee"}`,
+                borderBottom: `1px solid ${isActive ? "#1a73e8" : "#eee"}`,
+                borderLeft: `1px solid ${isActive ? "#1a73e8" : isPlaying ? "#4caf50" : "transparent"}`,
+                borderRight: `1px solid ${isActive ? "#1a73e8" : isPlaying ? "#4caf50" : "transparent"}`,
                 borderRadius: 6,
-                background: isActive ? "#1e3a8a33" : isPlaying ? "#14532d33" : "#222",
-                color: "#ddd",
+                background: isActive ? "#e8f0fe" : isPlaying ? "#e6f4ea" : "#fafafa",
+                color: "#333",
                 cursor: "pointer",
                 fontSize: 10,
                 fontFamily: "inherit",
                 transition: "background 0.1s",
               }}
               onMouseOver={(e) => {
-                if (!isActive && !isPlaying) e.currentTarget.style.background = "#2c2c2c";
+                if (!isActive && !isPlaying) e.currentTarget.style.background = "#f0f0f0";
               }}
               onMouseOut={(e) => {
-                if (!isActive && !isPlaying) e.currentTarget.style.background = "#222";
+                if (!isActive && !isPlaying) e.currentTarget.style.background = "#fafafa";
               }}
             >
               {/* Rally # */}
-              <span style={{ fontSize: 11, fontWeight: 600, color: isActive ? "#93c5fd" : "#ccc" }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: isActive ? "#1a73e8" : "#555" }}>
                 {r.rally_index + 1}
               </span>
 
@@ -197,9 +197,9 @@ export default function RallyStrip({
                   style={{
                     fontSize: 10,
                     padding: "1px 4px",
-                    background: "#333",
+                    background: "#f0f0f0",
                     borderRadius: 3,
-                    color: "#ccc",
+                    color: "#555",
                     minWidth: 28,
                     textAlign: "center",
                   }}
@@ -212,8 +212,8 @@ export default function RallyStrip({
 
               {/* Team bars */}
               <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 40, width: 28 }}>
-                <TeamBar count={team0Count} max={maxShots} color="#60a5fa" />
-                <TeamBar count={team1Count} max={maxShots} color="#4ade80" />
+                <TeamBar count={team0Count} max={maxShots} color="#1a73e8" />
+                <TeamBar count={team1Count} max={maxShots} color="#4caf50" />
               </div>
 
               {/* Fault indicator */}
