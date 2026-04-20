@@ -6,10 +6,11 @@ import {
   getOrCreateAnalysis,
   listAssessments,
   listNotes,
+  listSequences,
   setGameMuxPlaybackId,
 } from "../lib/coachApi";
 import { pbvPosterUrl } from "../lib/pbvVideo";
-import type { GameAnalysis, AnalysisNote, PlayerAssessment } from "../types/coach";
+import type { GameAnalysis, AnalysisNote, PlayerAssessment, AnalysisSequence } from "../types/coach";
 import VideoPlayer, { type VideoPlayerHandle } from "../components/analyze/VideoPlayer";
 import NotesPanel from "../components/analyze/NotesPanel";
 import VideoUrlInput from "../components/analyze/VideoUrlInput";
@@ -18,6 +19,7 @@ import RallyStrip from "../components/analyze/RallyStrip";
 import PlayerFocusBar from "../components/analyze/PlayerFocusBar";
 import ShotTooltip from "../components/analyze/ShotTooltip";
 import ReasonsForLosingRally from "../components/analyze/ReasonsForLosingRally";
+import SequenceManager from "../components/analyze/SequenceManager";
 import type { RallyShot } from "../types/database";
 
 interface GameRow {
@@ -83,6 +85,12 @@ export default function AnalyzePage() {
   // Rally explicitly selected by clicking the rally strip (overrides "current time" rally)
   const [selectedRallyId, setSelectedRallyId] = useState<string | null>(null);
   const [rallyLoop, setRallyLoop] = useState(true);
+
+  // Sequences
+  const [sequences, setSequences] = useState<AnalysisSequence[]>([]);
+  const [buildMode, setBuildMode] = useState(false);
+  const [draftShotIds, setDraftShotIds] = useState<Set<string>>(new Set());
+  const [activeSequenceId, setActiveSequenceId] = useState<string | null>(null);
 
   const videoRef = useRef<VideoPlayerHandle>(null);
 
@@ -151,14 +159,16 @@ export default function AnalyzePage() {
         if (cancelled) return;
         setAnalysis(a);
 
-        // Load notes + assessments
-        const [n, asss] = await Promise.all([
+        // Load notes + assessments + sequences
+        const [n, asss, seqs] = await Promise.all([
           listNotes(a.id),
           listAssessments(a.id),
+          listSequences(a.id),
         ]);
         if (!cancelled) {
           setNotes(n);
           setAssessments(asss);
+          setSequences(seqs);
         }
       } catch (e) {
         console.error("Failed to load analysis:", e);
@@ -174,18 +184,79 @@ export default function AnalyzePage() {
 
   const reloadNotes = useCallback(async () => {
     if (!analysis) return;
-    const [n, asss] = await Promise.all([
+    const [n, asss, seqs] = await Promise.all([
       listNotes(analysis.id),
       listAssessments(analysis.id),
+      listSequences(analysis.id),
     ]);
     setNotes(n);
     setAssessments(asss);
+    setSequences(seqs);
   }, [analysis]);
 
   async function handlePlaybackIdSave(playbackId: string) {
     if (!game) return;
     await setGameMuxPlaybackId(game.id, playbackId);
     setGame({ ...game, mux_playback_id: playbackId });
+  }
+
+  // Sequence handlers
+  function handleToggleBuildMode() {
+    setBuildMode((v) => {
+      if (v) setDraftShotIds(new Set()); // clearing on exit
+      return !v;
+    });
+    setActiveSequenceId(null);
+    setActiveShotId(null);
+  }
+
+  function handleToggleDraftShot(shotId: string) {
+    setDraftShotIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(shotId)) next.delete(shotId);
+      else next.add(shotId);
+      return next;
+    });
+  }
+
+  function handleClearDraft() {
+    setDraftShotIds(new Set());
+  }
+
+  function handlePlayDraft() {
+    if (draftShotIds.size === 0) return;
+    const seqShots = shots
+      .filter((s) => draftShotIds.has(s.id))
+      .sort((a, b) => a.start_ms - b.start_ms);
+    if (seqShots.length === 0) return;
+    setActiveSequenceId(null);
+    setActiveShotId(null);
+    videoRef.current?.seek(seqShots[0].start_ms);
+    videoRef.current?.setPlaybackRate(playbackRate);
+    void videoRef.current?.play();
+    setIsPaused(false);
+  }
+
+  function handleActivateSequence(seq: AnalysisSequence) {
+    // Clear other selections
+    setBuildMode(false);
+    setDraftShotIds(new Set());
+    setActiveShotId(null);
+    setActiveSequenceId(seq.id);
+
+    // Select the rally containing this sequence so the panel switches context
+    setSelectedRallyId(seq.rally_id);
+
+    const seqShots = seq.shot_ids
+      .map((id) => shots.find((s) => s.id === id))
+      .filter((s): s is NonNullable<typeof s> => !!s)
+      .sort((a, b) => a.start_ms - b.start_ms);
+    if (seqShots.length === 0) return;
+
+    videoRef.current?.seek(seqShots[0].start_ms);
+    videoRef.current?.setPlaybackRate(playbackRate);
+    void videoRef.current?.play();
+    setIsPaused(false);
   }
 
   // Shot playback control handlers
@@ -236,13 +307,41 @@ export default function AnalyzePage() {
   useEffect(() => {
     if (!rallyLoop || !selectedRallyId) return;
     if (activeShotId && isLooping) return; // shot loop wins
+    if (activeSequenceId || draftShotIds.size > 0) return; // sequence loop wins
     const rally = rallies.find((r) => r.id === selectedRallyId);
     if (!rally) return;
-    const endBuffer = 500; // slightly longer buffer so the last shot plays fully
+    const endBuffer = 500;
     if (currentMs > rally.end_ms + endBuffer) {
       videoRef.current?.seek(rally.start_ms);
     }
-  }, [currentMs, rallyLoop, selectedRallyId, activeShotId, isLooping, rallies]);
+  }, [currentMs, rallyLoop, selectedRallyId, activeShotId, isLooping, activeSequenceId, draftShotIds, rallies]);
+
+  // Sequence loop: when a saved sequence is active OR a draft is being previewed,
+  // loop from the earliest selected shot's start to the latest's end.
+  useEffect(() => {
+    // Saved sequence takes precedence over draft
+    let shotIds: string[] = [];
+    if (activeSequenceId) {
+      const seq = sequences.find((s) => s.id === activeSequenceId);
+      shotIds = seq?.shot_ids ?? [];
+    } else if (draftShotIds.size > 0) {
+      shotIds = Array.from(draftShotIds);
+    } else {
+      return;
+    }
+
+    const seqShots = shotIds
+      .map((id) => shots.find((s) => s.id === id))
+      .filter((s): s is NonNullable<typeof s> => !!s);
+    if (seqShots.length === 0) return;
+
+    const start = Math.min(...seqShots.map((s) => s.start_ms));
+    const end = Math.max(...seqShots.map((s) => s.end_ms));
+    const endBuffer = 400;
+    if (currentMs > end + endBuffer) {
+      videoRef.current?.seek(start);
+    }
+  }, [currentMs, activeSequenceId, draftShotIds, sequences, shots]);
 
   // Keep isPaused in sync with player state
   useEffect(() => {
@@ -405,8 +504,34 @@ export default function AnalyzePage() {
                   onToggleLoop={handleToggleLoop}
                   onSetPlaybackRate={handleSetPlaybackRate}
                   onTogglePlay={handleTogglePlay}
+                  buildMode={buildMode}
+                  draftShotIds={draftShotIds}
+                  onToggleBuildMode={handleToggleBuildMode}
+                  onToggleDraftShot={handleToggleDraftShot}
                 />
               </div>
+
+              {/* Sequence manager: build form + saved sequences for current rally */}
+              {analysis && (
+                <div style={{ marginTop: 12 }}>
+                  <SequenceManager
+                    analysisId={analysis.id}
+                    rally={currentRally}
+                    shots={shots}
+                    players={players}
+                    sequences={sequences}
+                    activeSequenceId={activeSequenceId}
+                    buildMode={buildMode}
+                    draftShotIds={draftShotIds}
+                    focusedPlayerIndex={focusedPlayerIndex}
+                    onCancelBuild={() => setBuildMode(false)}
+                    onClearDraft={handleClearDraft}
+                    onPlayDraft={handlePlayDraft}
+                    onActivateSequence={handleActivateSequence}
+                    onReload={reloadNotes}
+                  />
+                </div>
+              )}
             </>
           ) : (
             <VideoUrlInput

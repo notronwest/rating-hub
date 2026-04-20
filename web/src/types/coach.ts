@@ -57,3 +57,16 @@ export interface UserOrgRoleRow {
   role: "coach" | "admin" | "viewer";
   created_at: string;
 }
+
+export interface AnalysisSequence {
+  id: string;
+  analysis_id: string;
+  rally_id: string;
+  shot_ids: string[];
+  label: string | null;
+  player_id: string | null;
+  what_went_wrong: string | null;
+  how_to_fix: string | null;
+  created_at: string;
+  updated_at: string;
+}

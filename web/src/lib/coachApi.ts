@@ -5,6 +5,7 @@ import type {
   PlayerAssessment,
   AssessmentKind,
   NoteCategory,
+  AnalysisSequence,
 } from "../types/coach";
 
 /**
@@ -237,4 +238,70 @@ export async function listPlayerAssessmentHistory(
     game_id: r.game_analyses.game_id,
     played_at: r.game_analyses.games?.played_at ?? null,
   }));
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Sequences (chains of shots within a rally with teaching notes)
+// ─────────────────────────────────────────────────────────────────
+
+export async function listSequences(
+  analysisId: string,
+): Promise<AnalysisSequence[]> {
+  const { data, error } = await supabase
+    .from("game_analysis_sequences")
+    .select("*")
+    .eq("analysis_id", analysisId)
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as AnalysisSequence[];
+}
+
+export async function createSequence(params: {
+  analysisId: string;
+  rallyId: string;
+  shotIds: string[];
+  label?: string | null;
+  playerId?: string | null;
+  whatWentWrong?: string | null;
+  howToFix?: string | null;
+}): Promise<AnalysisSequence> {
+  const { data, error } = await supabase
+    .from("game_analysis_sequences")
+    .insert({
+      analysis_id: params.analysisId,
+      rally_id: params.rallyId,
+      shot_ids: params.shotIds,
+      label: params.label ?? null,
+      player_id: params.playerId ?? null,
+      what_went_wrong: params.whatWentWrong ?? null,
+      how_to_fix: params.howToFix ?? null,
+    })
+    .select("*")
+    .single();
+  if (error) throw new Error(error.message);
+  return data as AnalysisSequence;
+}
+
+export async function updateSequence(
+  id: string,
+  patch: Partial<
+    Pick<
+      AnalysisSequence,
+      "shot_ids" | "label" | "player_id" | "what_went_wrong" | "how_to_fix"
+    >
+  >,
+): Promise<void> {
+  const { error } = await supabase
+    .from("game_analysis_sequences")
+    .update(patch)
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteSequence(id: string): Promise<void> {
+  const { error } = await supabase
+    .from("game_analysis_sequences")
+    .delete()
+    .eq("id", id);
+  if (error) throw new Error(error.message);
 }

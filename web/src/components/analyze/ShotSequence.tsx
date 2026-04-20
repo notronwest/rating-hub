@@ -33,6 +33,11 @@ interface Props {
   onToggleLoop: () => void;
   onSetPlaybackRate: (rate: number) => void;
   onTogglePlay: () => void;
+  // Sequence build mode
+  buildMode: boolean;
+  draftShotIds: Set<string>;
+  onToggleBuildMode: () => void;
+  onToggleDraftShot: (shotId: string) => void;
 }
 
 /** Colors for shot type badges. */
@@ -68,6 +73,10 @@ export default function ShotSequence({
   onToggleLoop,
   onSetPlaybackRate,
   onTogglePlay,
+  buildMode,
+  draftShotIds,
+  onToggleBuildMode,
+  onToggleDraftShot,
 }: Props) {
   const activeShot = activeShotId ? shots.find((s) => s.id === activeShotId) : null;
   const activePlayer = activeShot
@@ -136,11 +145,33 @@ export default function ShotSequence({
             )}
           </div>
         </div>
-        {scoreDisplay && (
-          <div style={{ fontSize: 16, fontWeight: 700, color: "#333" }}>
-            {scoreDisplay}
-          </div>
-        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {scoreDisplay && (
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#333" }}>
+              {scoreDisplay}
+            </div>
+          )}
+          <button
+            onClick={onToggleBuildMode}
+            title="Select shots to build a sequence with teaching notes"
+            style={{
+              padding: "4px 10px",
+              fontSize: 11,
+              fontWeight: buildMode ? 700 : 500,
+              borderTop: `1px solid ${buildMode ? "#1a73e8" : "#ddd"}`,
+              borderBottom: `1px solid ${buildMode ? "#1a73e8" : "#ddd"}`,
+              borderLeft: `1px solid ${buildMode ? "#1a73e8" : "#ddd"}`,
+              borderRight: `1px solid ${buildMode ? "#1a73e8" : "#ddd"}`,
+              borderRadius: 5,
+              background: buildMode ? "#1a73e8" : "#fff",
+              color: buildMode ? "#fff" : "#555",
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            📋 {buildMode ? "Building…" : "Build sequence"}
+          </button>
+        </div>
       </div>
 
       {/* Active shot controls */}
@@ -227,7 +258,9 @@ export default function ShotSequence({
             return (
               <button
                 key={shot.id}
-                onClick={() => onActivateShot(shot)}
+                onClick={() =>
+                  buildMode ? onToggleDraftShot(shot.id) : onActivateShot(shot)
+                }
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -235,10 +268,14 @@ export default function ShotSequence({
                   width: "100%",
                   padding: "8px 14px",
                   fontSize: 13,
-                  background: bgColor,
+                  background: buildMode && draftShotIds.has(shot.id)
+                    ? "#fff3cd"
+                    : bgColor,
                   borderTop: "none",
                   borderBottom: "1px solid #f0f0f0",
-                  borderLeft: isActive
+                  borderLeft: buildMode && draftShotIds.has(shot.id)
+                    ? "3px solid #f59e0b"
+                    : isActive
                     ? `3px solid #1a73e8`
                     : isPlaying
                     ? `3px solid #4caf50`
@@ -254,6 +291,31 @@ export default function ShotSequence({
                   e.currentTarget.style.background = bgColor;
                 }}
               >
+                {/* Build-mode checkbox */}
+                {buildMode && (
+                  <span
+                    style={{
+                      flexShrink: 0,
+                      width: 18,
+                      height: 18,
+                      borderRadius: 4,
+                      borderTop: `1px solid ${draftShotIds.has(shot.id) ? "#f59e0b" : "#bbb"}`,
+                      borderBottom: `1px solid ${draftShotIds.has(shot.id) ? "#f59e0b" : "#bbb"}`,
+                      borderLeft: `1px solid ${draftShotIds.has(shot.id) ? "#f59e0b" : "#bbb"}`,
+                      borderRight: `1px solid ${draftShotIds.has(shot.id) ? "#f59e0b" : "#bbb"}`,
+                      background: draftShotIds.has(shot.id) ? "#f59e0b" : "#fff",
+                      color: "#fff",
+                      fontSize: 11,
+                      fontWeight: 700,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    {draftShotIds.has(shot.id) ? "✓" : ""}
+                  </span>
+                )}
+
                 {/* Shot number */}
                 <span
                   style={{
