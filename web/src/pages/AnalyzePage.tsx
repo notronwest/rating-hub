@@ -17,6 +17,7 @@ import ShotSequence from "../components/analyze/ShotSequence";
 import RallyStrip from "../components/analyze/RallyStrip";
 import PlayerFocusBar from "../components/analyze/PlayerFocusBar";
 import ShotTooltip from "../components/analyze/ShotTooltip";
+import ReasonsForLosingRally from "../components/analyze/ReasonsForLosingRally";
 import type { RallyShot } from "../types/database";
 
 interface GameRow {
@@ -30,6 +31,7 @@ interface GameRow {
   team1_score: number | null;
   session_id: string | null;
   mux_playback_id: string | null;
+  scoring_type: string | null;
   highlights: Array<{ rally_idx: number; s: number; e: number; kind: string; short_description: string }> | null;
 }
 
@@ -93,7 +95,7 @@ export default function AnalyzePage() {
       // Fetch game
       const { data: g } = await supabase
         .from("games")
-        .select("id, org_id, session_name, pbvision_video_id, pbvision_bucket, played_at, team0_score, team1_score, session_id, mux_playback_id, highlights")
+        .select("id, org_id, session_name, pbvision_video_id, pbvision_bucket, played_at, team0_score, team1_score, session_id, mux_playback_id, scoring_type, highlights")
         .eq("id", gameId)
         .single();
 
@@ -434,6 +436,18 @@ export default function AnalyzePage() {
           )}
         </div>
       </div>
+
+      {/* Reasons for Losing Rally — full width below the main analyze area */}
+      {rallies.length > 0 && shots.length > 0 && (
+        <div style={{ marginTop: 20 }}>
+          <ReasonsForLosingRally
+            rallies={rallies}
+            shots={shots}
+            players={players}
+            scoringType={game.scoring_type}
+          />
+        </div>
+      )}
     </div>
   );
 }
