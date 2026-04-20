@@ -7,10 +7,13 @@ import {
   listAssessments,
   listNotes,
   listSequences,
+  listFlaggedShots,
+  flagShot,
+  unflagShot,
   setGameMuxPlaybackId,
 } from "../lib/coachApi";
 import { pbvPosterUrl } from "../lib/pbvVideo";
-import type { GameAnalysis, AnalysisNote, PlayerAssessment, AnalysisSequence } from "../types/coach";
+import type { GameAnalysis, AnalysisNote, PlayerAssessment, AnalysisSequence, FlaggedShot } from "../types/coach";
 import VideoPlayer, { type VideoPlayerHandle } from "../components/analyze/VideoPlayer";
 import NotesPanel from "../components/analyze/NotesPanel";
 import VideoUrlInput from "../components/analyze/VideoUrlInput";
@@ -20,6 +23,7 @@ import PlayerFocusBar from "../components/analyze/PlayerFocusBar";
 import ShotTooltip from "../components/analyze/ShotTooltip";
 import ReasonsForLosingRally from "../components/analyze/ReasonsForLosingRally";
 import SequenceManager from "../components/analyze/SequenceManager";
+import FlaggedShotsPanel from "../components/analyze/FlaggedShotsPanel";
 import type { RallyShot } from "../types/database";
 
 interface GameRow {
@@ -92,6 +96,9 @@ export default function AnalyzePage() {
   const [draftShotIds, setDraftShotIds] = useState<Set<string>>(new Set());
   const [activeSequenceId, setActiveSequenceId] = useState<string | null>(null);
 
+  // Flagged shots
+  const [flags, setFlags] = useState<FlaggedShot[]>([]);
+
   const videoRef = useRef<VideoPlayerHandle>(null);
 
   // Load all page data
@@ -159,16 +166,18 @@ export default function AnalyzePage() {
         if (cancelled) return;
         setAnalysis(a);
 
-        // Load notes + assessments + sequences
-        const [n, asss, seqs] = await Promise.all([
+        // Load notes + assessments + sequences + flagged shots
+        const [n, asss, seqs, flg] = await Promise.all([
           listNotes(a.id),
           listAssessments(a.id),
           listSequences(a.id),
+          listFlaggedShots(a.id),
         ]);
         if (!cancelled) {
           setNotes(n);
           setAssessments(asss);
           setSequences(seqs);
+          setFlags(flg);
         }
       } catch (e) {
         console.error("Failed to load analysis:", e);
@@ -184,14 +193,16 @@ export default function AnalyzePage() {
 
   const reloadNotes = useCallback(async () => {
     if (!analysis) return;
-    const [n, asss, seqs] = await Promise.all([
+    const [n, asss, seqs, flg] = await Promise.all([
       listNotes(analysis.id),
       listAssessments(analysis.id),
       listSequences(analysis.id),
+      listFlaggedShots(analysis.id),
     ]);
     setNotes(n);
     setAssessments(asss);
     setSequences(seqs);
+    setFlags(flg);
   }, [analysis]);
 
   async function handlePlaybackIdSave(playbackId: string) {
@@ -232,6 +243,38 @@ export default function AnalyzePage() {
     setActiveSequenceId(null);
     setActiveShotId(null);
     videoRef.current?.seek(seqShots[0].start_ms);
+    videoRef.current?.setPlaybackRate(playbackRate);
+    void videoRef.current?.play();
+    setIsPaused(false);
+  }
+
+  // Flagged shot handlers
+  async function handleToggleFlag(shotId: string) {
+    if (!analysis) return;
+    const alreadyFlagged = flags.some((f) => f.shot_id === shotId);
+    try {
+      if (alreadyFlagged) {
+        await unflagShot(analysis.id, shotId);
+        setFlags((prev) => prev.filter((f) => f.shot_id !== shotId));
+      } else {
+        const created = await flagShot({
+          analysisId: analysis.id,
+          shotId,
+        });
+        setFlags((prev) => [...prev, created]);
+      }
+    } catch (e) {
+      console.error("Toggle flag failed:", e);
+    }
+  }
+
+  function handleJumpToFlaggedShot(shot: RallyShot) {
+    setSelectedRallyId(shot.rally_id);
+    setActiveShotId(shot.id);
+    setBuildMode(false);
+    setDraftShotIds(new Set());
+    setActiveSequenceId(null);
+    videoRef.current?.seek(shot.start_ms);
     videoRef.current?.setPlaybackRate(playbackRate);
     void videoRef.current?.play();
     setIsPaused(false);
@@ -405,6 +448,9 @@ export default function AnalyzePage() {
         )
     : [];
 
+  // Set of flagged shot IDs for fast lookup
+  const flaggedShotIds = new Set(flags.map((f) => f.shot_id));
+
   // The currently "playing" shot (for the video tooltip overlay) — based on currentMs
   const playingShot = shots.find(
     (s) => currentMs >= s.start_ms && currentMs <= s.end_ms,
@@ -532,6 +578,21 @@ export default function AnalyzePage() {
                 <kbd style={kbdStyle}>]</kbd> next rally
               </div>
 
+              {/* Flagged shots — coach bookmarks. Appears under the video. */}
+              {flags.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <FlaggedShotsPanel
+                    flags={flags}
+                    shots={shots}
+                    rallies={rallies}
+                    players={players}
+                    onJumpToShot={handleJumpToFlaggedShot}
+                    onUnflag={handleToggleFlag}
+                    onReload={reloadNotes}
+                  />
+                </div>
+              )}
+
               {/* Player focus filter */}
               <div style={{ marginTop: 16, paddingBottom: 10, borderBottom: "1px solid #eee" }}>
                 <PlayerFocusBar
@@ -561,6 +622,8 @@ export default function AnalyzePage() {
                   draftShotIds={draftShotIds}
                   onToggleBuildMode={handleToggleBuildMode}
                   onToggleDraftShot={handleToggleDraftShot}
+                  flaggedShotIds={flaggedShotIds}
+                  onToggleFlag={handleToggleFlag}
                 />
               </div>
 

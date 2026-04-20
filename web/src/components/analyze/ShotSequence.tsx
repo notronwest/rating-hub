@@ -38,6 +38,9 @@ interface Props {
   draftShotIds: Set<string>;
   onToggleBuildMode: () => void;
   onToggleDraftShot: (shotId: string) => void;
+  // Flags
+  flaggedShotIds: Set<string>;
+  onToggleFlag: (shotId: string) => void;
 }
 
 /** Colors for shot type badges. */
@@ -77,6 +80,8 @@ export default function ShotSequence({
   draftShotIds,
   onToggleBuildMode,
   onToggleDraftShot,
+  flaggedShotIds,
+  onToggleFlag,
 }: Props) {
   const activeShot = activeShotId ? shots.find((s) => s.id === activeShotId) : null;
   const activePlayer = activeShot
@@ -401,6 +406,38 @@ export default function ShotSequence({
                     title="Rally-ending shot"
                   >
                     END
+                  </span>
+                )}
+
+                {/* Flag toggle — stop propagation so it doesn't activate the shot */}
+                {!buildMode && (
+                  <span
+                    role="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleFlag(shot.id);
+                    }}
+                    title={flaggedShotIds.has(shot.id) ? "Unflag" : "Flag for review"}
+                    style={{
+                      flexShrink: 0,
+                      fontSize: 14,
+                      padding: "2px 5px",
+                      borderRadius: 4,
+                      cursor: "pointer",
+                      opacity: flaggedShotIds.has(shot.id) ? 1 : 0.35,
+                      color: flaggedShotIds.has(shot.id) ? "#d97706" : "#999",
+                      transition: "opacity 0.1s",
+                    }}
+                    onMouseOver={(e) =>
+                      !flaggedShotIds.has(shot.id) &&
+                      (e.currentTarget.style.opacity = "0.8")
+                    }
+                    onMouseOut={(e) =>
+                      !flaggedShotIds.has(shot.id) &&
+                      (e.currentTarget.style.opacity = "0.35")
+                    }
+                  >
+                    {flaggedShotIds.has(shot.id) ? "🚩" : "⚑"}
                   </span>
                 )}
               </button>

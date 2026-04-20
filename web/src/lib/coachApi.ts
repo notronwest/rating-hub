@@ -6,6 +6,7 @@ import type {
   AssessmentKind,
   NoteCategory,
   AnalysisSequence,
+  FlaggedShot,
 } from "../types/coach";
 
 /**
@@ -302,6 +303,63 @@ export async function deleteSequence(id: string): Promise<void> {
   const { error } = await supabase
     .from("game_analysis_sequences")
     .delete()
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Flagged shots (coach bookmarks for later review)
+// ─────────────────────────────────────────────────────────────────
+
+export async function listFlaggedShots(
+  analysisId: string,
+): Promise<FlaggedShot[]> {
+  const { data, error } = await supabase
+    .from("analysis_flagged_shots")
+    .select("*")
+    .eq("analysis_id", analysisId)
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as FlaggedShot[];
+}
+
+export async function flagShot(params: {
+  analysisId: string;
+  shotId: string;
+  note?: string | null;
+}): Promise<FlaggedShot> {
+  const { data, error } = await supabase
+    .from("analysis_flagged_shots")
+    .upsert(
+      {
+        analysis_id: params.analysisId,
+        shot_id: params.shotId,
+        note: params.note ?? null,
+      },
+      { onConflict: "analysis_id,shot_id" },
+    )
+    .select("*")
+    .single();
+  if (error) throw new Error(error.message);
+  return data as FlaggedShot;
+}
+
+export async function unflagShot(
+  analysisId: string,
+  shotId: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from("analysis_flagged_shots")
+    .delete()
+    .eq("analysis_id", analysisId)
+    .eq("shot_id", shotId);
+  if (error) throw new Error(error.message);
+}
+
+export async function updateFlagNote(id: string, note: string | null): Promise<void> {
+  const { error } = await supabase
+    .from("analysis_flagged_shots")
+    .update({ note })
     .eq("id", id);
   if (error) throw new Error(error.message);
 }

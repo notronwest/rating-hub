@@ -70,3 +70,11 @@ export interface AnalysisSequence {
   created_at: string;
   updated_at: string;
 }
+
+export interface FlaggedShot {
+  id: string;
+  analysis_id: string;
+  shot_id: string;
+  note: string | null;
+  created_at: string;
+}
