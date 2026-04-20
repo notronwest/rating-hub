@@ -53,10 +53,16 @@ export default function VideoPopoutPage() {
     if (!gameId) return;
     const ch = new BroadcastChannel(`analyze-video-${gameId}`);
     channelRef.current = ch;
+    console.log("[popout] channel opened", ch.name);
 
     ch.onmessage = (e: MessageEvent<PopoutMessage>) => {
       const msg = e.data;
-      if (!msg || !videoRef.current) return;
+      if (!msg) return;
+      console.log("[popout] ← ", msg.type, msg);
+      if (!videoRef.current) {
+        console.warn("[popout] videoRef not ready; dropping", msg.type);
+        return;
+      }
       setMainConnected(true);
       switch (msg.type) {
         case "seek":
@@ -75,14 +81,22 @@ export default function VideoPopoutPage() {
           videoRef.current.setPlaybackRate(msg.rate);
           break;
         case "close":
-          // Main asked us to close
           window.close();
           break;
       }
     };
 
-    // Announce readiness
-    ch.postMessage({ type: "ready" });
+    // Announce readiness (retry a couple times in case main isn't listening yet)
+    const announce = () => {
+      try {
+        ch.postMessage({ type: "ready" });
+        console.log("[popout] → ready");
+      } catch {
+        // ignore
+      }
+    };
+    announce();
+    const retries = [setTimeout(announce, 200), setTimeout(announce, 1000)];
 
     // When this tab unloads, notify main
     const onUnload = () => {
@@ -95,6 +109,7 @@ export default function VideoPopoutPage() {
     window.addEventListener("beforeunload", onUnload);
 
     return () => {
+      retries.forEach(clearTimeout);
       window.removeEventListener("beforeunload", onUnload);
       try {
         ch.postMessage({ type: "closing" });

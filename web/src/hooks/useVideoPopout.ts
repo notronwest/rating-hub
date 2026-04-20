@@ -1,14 +1,10 @@
 /**
  * Sync the Analyze page's video with a second browser tab.
  *
- * Flow:
- *   - Main page calls `openPopout()` → opens /video-popout/:gameId in a new tab
- *     and sets popoutActive = true.
- *   - Both sides open a BroadcastChannel named `analyze-video-<gameId>`.
- *   - Popout renders the Mux player and broadcasts its current time + paused
- *     state. It listens for seek/play/pause/rate commands.
- *   - Main page's controls post commands to the channel instead of calling
- *     the local Mux player (which is unmounted).
+ * Main always keeps a BroadcastChannel open so the popout can talk as soon
+ * as it loads. The popout's "ready" message flips popoutActive on, and
+ * "closing" flips it off. No time is spent waiting for the channel to
+ * open after a click.
  *
  * Messages:
  *   main → popout:   { type: 'seek', ms } | { type: 'play' } | { type: 'pause' }
@@ -33,7 +29,6 @@ export interface VideoPopoutState {
   closePopout: () => void;
   /** Unified controller — use this instead of the local ref. */
   controller: VideoPlayerHandle;
-  /** Current playback ms (from either local or remote). */
   currentMs: number;
   setCurrentMs: Dispatch<SetStateAction<number>>;
   isPaused: boolean;
@@ -51,20 +46,26 @@ export function useVideoPopout(
   const channelRef = useRef<BroadcastChannel | null>(null);
   const popoutWindowRef = useRef<Window | null>(null);
 
-  // Open / close the BroadcastChannel whenever popoutActive flips
+  // Keep a BroadcastChannel open for the lifetime of the page so the popout
+  // can communicate from the moment it loads.
   useEffect(() => {
-    if (!popoutActive) return;
+    if (!gameId) return;
     const ch = new BroadcastChannel(`analyze-video-${gameId}`);
     channelRef.current = ch;
+    console.log("[popout] main: channel opened", ch.name);
 
     ch.onmessage = (e: MessageEvent<PopoutMessage>) => {
       const msg = e.data;
       if (!msg) return;
-      if (msg.type === "time") setCurrentMs(msg.ms);
-      else if (msg.type === "paused") setIsPaused(msg.paused);
-      else if (msg.type === "closing") setPopoutActive(false);
-      else if (msg.type === "ready") {
-        // Popout came online — no-op, but in future we could sync rate
+      console.log("[popout] main ← ", msg.type);
+      if (msg.type === "time") {
+        setCurrentMs(msg.ms);
+      } else if (msg.type === "paused") {
+        setIsPaused(msg.paused);
+      } else if (msg.type === "ready") {
+        setPopoutActive(true);
+      } else if (msg.type === "closing") {
+        setPopoutActive(false);
       }
     };
 
@@ -72,13 +73,15 @@ export function useVideoPopout(
       ch.close();
       channelRef.current = null;
     };
-  }, [popoutActive, gameId]);
+  }, [gameId]);
 
-  // Detect if the popout window was closed manually
+  // If the popout window is closed manually (no beforeunload fired), detect it
   useEffect(() => {
     if (!popoutActive) return;
     const iv = setInterval(() => {
-      if (popoutWindowRef.current?.closed) {
+      if (popoutWindowRef.current && popoutWindowRef.current.closed) {
+        console.log("[popout] main: detected popout window closed");
+        popoutWindowRef.current = null;
         setPopoutActive(false);
       }
     }, 1000);
@@ -86,44 +89,49 @@ export function useVideoPopout(
   }, [popoutActive]);
 
   function openPopout() {
-    const w = window.open(
-      `/video-popout/${gameId}`,
-      `video-popout-${gameId}`,
-      "noopener=false",
-    );
+    if (!gameId) return;
+    const url = `${window.location.origin}/video-popout/${gameId}`;
+    console.log("[popout] main: opening", url);
+    const w = window.open(url, `video-popout-${gameId}`);
     if (!w) {
       alert(
-        "Popup blocked. Allow popups for this site, or open /video-popout/" +
-          gameId +
-          " in a new tab manually.",
+        "Popup blocked. Allow popups for this site, or open the link in a new tab manually:\n\n" +
+          url,
       );
       return;
     }
     popoutWindowRef.current = w;
+    // Optimistic: flip to active now; will be confirmed by the popout's "ready"
     setPopoutActive(true);
   }
 
   function closePopout() {
+    console.log("[popout] main: closing popout");
     channelRef.current?.postMessage({ type: "close" });
-    // Give popout a moment to receive the message, then close the window
     setTimeout(() => {
-      popoutWindowRef.current?.close();
+      try {
+        popoutWindowRef.current?.close();
+      } catch {
+        // ignore
+      }
       popoutWindowRef.current = null;
       setPopoutActive(false);
     }, 100);
   }
 
-  // Unified controller: routes calls to either the local player or the channel
+  // Unified controller
   const controller: VideoPlayerHandle = useMemo(
     () => ({
       seek: (ms) => {
-        if (popoutActive) channelRef.current?.postMessage({ type: "seek", ms });
-        else localRef.current?.seek(ms);
+        if (popoutActive) {
+          console.log("[popout] main → seek", ms);
+          channelRef.current?.postMessage({ type: "seek", ms });
+        } else {
+          localRef.current?.seek(ms);
+        }
       },
-      getCurrentMs: () => {
-        if (popoutActive) return currentMs;
-        return localRef.current?.getCurrentMs() ?? 0;
-      },
+      getCurrentMs: () =>
+        popoutActive ? currentMs : localRef.current?.getCurrentMs() ?? 0,
       play: () => {
         if (popoutActive) channelRef.current?.postMessage({ type: "play" });
         else localRef.current?.play();
@@ -142,10 +150,8 @@ export function useVideoPopout(
           channelRef.current?.postMessage({ type: "setRate", rate });
         else localRef.current?.setPlaybackRate(rate);
       },
-      isPaused: () => {
-        if (popoutActive) return isPaused;
-        return localRef.current?.isPaused() ?? true;
-      },
+      isPaused: () =>
+        popoutActive ? isPaused : localRef.current?.isPaused() ?? true,
     }),
     [popoutActive, currentMs, isPaused, localRef],
   );
