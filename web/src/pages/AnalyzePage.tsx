@@ -15,6 +15,7 @@ import {
 import { pbvPosterUrl } from "../lib/pbvVideo";
 import type { GameAnalysis, AnalysisNote, PlayerAssessment, AnalysisSequence, FlaggedShot } from "../types/coach";
 import VideoPlayer, { type VideoPlayerHandle } from "../components/analyze/VideoPlayer";
+import { useVideoPopout } from "../hooks/useVideoPopout";
 import NotesPanel from "../components/analyze/NotesPanel";
 import VideoUrlInput from "../components/analyze/VideoUrlInput";
 import ShotSequence from "../components/analyze/ShotSequence";
@@ -76,13 +77,11 @@ export default function AnalyzePage() {
   const [notes, setNotes] = useState<AnalysisNote[]>([]);
   const [assessments, setAssessments] = useState<PlayerAssessment[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentMs, setCurrentMs] = useState(0);
 
   // Shot playback controls
   const [activeShotId, setActiveShotId] = useState<string | null>(null);
   const [isLooping, setIsLooping] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
-  const [isPaused, setIsPaused] = useState(true);
 
   // Filters
   const [focusedPlayerIndex, setFocusedPlayerIndex] = useState<number | null>(null);
@@ -99,7 +98,17 @@ export default function AnalyzePage() {
   // Flagged shots
   const [flags, setFlags] = useState<FlaggedShot[]>([]);
 
-  const videoRef = useRef<VideoPlayerHandle>(null);
+  const localVideoRef = useRef<VideoPlayerHandle>(null);
+  const {
+    popoutActive,
+    openPopout,
+    closePopout,
+    controller: videoRef,
+    currentMs,
+    setCurrentMs,
+    isPaused,
+    setIsPaused,
+  } = useVideoPopout(gameId ?? "", localVideoRef);
 
   // Load all page data
   useEffect(() => {
@@ -242,9 +251,9 @@ export default function AnalyzePage() {
     if (seqShots.length === 0) return;
     setActiveSequenceId(null);
     setActiveShotId(null);
-    videoRef.current?.seek(seqShots[0].start_ms);
-    videoRef.current?.setPlaybackRate(playbackRate);
-    void videoRef.current?.play();
+    videoRef.seek(seqShots[0].start_ms);
+    videoRef.setPlaybackRate(playbackRate);
+    void videoRef.play();
     setIsPaused(false);
   }
 
@@ -274,9 +283,9 @@ export default function AnalyzePage() {
     setBuildMode(false);
     setDraftShotIds(new Set());
     setActiveSequenceId(null);
-    videoRef.current?.seek(shot.start_ms);
-    videoRef.current?.setPlaybackRate(playbackRate);
-    void videoRef.current?.play();
+    videoRef.seek(shot.start_ms);
+    videoRef.setPlaybackRate(playbackRate);
+    void videoRef.play();
     setIsPaused(false);
   }
 
@@ -296,26 +305,26 @@ export default function AnalyzePage() {
       .sort((a, b) => a.start_ms - b.start_ms);
     if (seqShots.length === 0) return;
 
-    videoRef.current?.seek(seqShots[0].start_ms);
-    videoRef.current?.setPlaybackRate(playbackRate);
-    void videoRef.current?.play();
+    videoRef.seek(seqShots[0].start_ms);
+    videoRef.setPlaybackRate(playbackRate);
+    void videoRef.play();
     setIsPaused(false);
   }
 
   // Shot playback control handlers
   function handleActivateShot(shot: RallyShot) {
     setActiveShotId(shot.id);
-    videoRef.current?.seek(shot.start_ms);
-    videoRef.current?.setPlaybackRate(playbackRate);
-    void videoRef.current?.play();
+    videoRef.seek(shot.start_ms);
+    videoRef.setPlaybackRate(playbackRate);
+    void videoRef.play();
     setIsPaused(false);
   }
 
   function handleReplayShot() {
     const active = shots.find((s) => s.id === activeShotId);
     if (!active) return;
-    videoRef.current?.seek(active.start_ms);
-    void videoRef.current?.play();
+    videoRef.seek(active.start_ms);
+    void videoRef.play();
     setIsPaused(false);
   }
 
@@ -325,11 +334,11 @@ export default function AnalyzePage() {
 
   function handleSetPlaybackRate(rate: number) {
     setPlaybackRate(rate);
-    videoRef.current?.setPlaybackRate(rate);
+    videoRef.setPlaybackRate(rate);
   }
 
   function handleTogglePlay() {
-    videoRef.current?.togglePlay();
+    videoRef.togglePlay();
     setIsPaused((p) => !p);
   }
 
@@ -341,7 +350,7 @@ export default function AnalyzePage() {
     if (!active) return;
     const endBuffer = 100;
     if (currentMs > active.end_ms + endBuffer) {
-      videoRef.current?.seek(active.start_ms);
+      videoRef.seek(active.start_ms);
     }
   }, [currentMs, isLooping, activeShotId, shots]);
 
@@ -355,7 +364,7 @@ export default function AnalyzePage() {
     if (!rally) return;
     const endBuffer = 500;
     if (currentMs > rally.end_ms + endBuffer) {
-      videoRef.current?.seek(rally.start_ms);
+      videoRef.seek(rally.start_ms);
     }
   }, [currentMs, rallyLoop, selectedRallyId, activeShotId, isLooping, activeSequenceId, draftShotIds, rallies]);
 
@@ -382,19 +391,18 @@ export default function AnalyzePage() {
     const end = Math.max(...seqShots.map((s) => s.end_ms));
     const endBuffer = 400;
     if (currentMs > end + endBuffer) {
-      videoRef.current?.seek(start);
+      videoRef.seek(start);
     }
   }, [currentMs, activeSequenceId, draftShotIds, sequences, shots]);
 
   // Keep isPaused in sync with player state
   useEffect(() => {
     const interval = setInterval(() => {
-      if (videoRef.current) {
-        const paused = videoRef.current.isPaused();
-        setIsPaused((prev) => (prev !== paused ? paused : prev));
-      }
+      const paused = videoRef.isPaused();
+      setIsPaused((prev) => (prev !== paused ? paused : prev));
     }, 500);
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Keyboard shortcuts
@@ -405,15 +413,15 @@ export default function AnalyzePage() {
 
       if (e.code === "Space") {
         e.preventDefault();
-        videoRef.current?.togglePlay();
+        videoRef.togglePlay();
       } else if (e.key === "[") {
         e.preventDefault();
         const prev = [...rallies].reverse().find((r) => r.start_ms < currentMs - 500);
-        if (prev) videoRef.current?.seek(prev.start_ms);
+        if (prev) videoRef.seek(prev.start_ms);
       } else if (e.key === "]") {
         e.preventDefault();
         const next = rallies.find((r) => r.start_ms > currentMs + 500);
-        if (next) videoRef.current?.seek(next.start_ms);
+        if (next) videoRef.seek(next.start_ms);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -547,10 +555,10 @@ export default function AnalyzePage() {
             onRallyClick={(r) => {
               setSelectedRallyId(r.id);
               setActiveShotId(null); // clear shot selection so rally loop takes effect
-              videoRef.current?.seek(r.start_ms);
+              videoRef.seek(r.start_ms);
               setCurrentMs(r.start_ms);
-              videoRef.current?.setPlaybackRate(playbackRate);
-              void videoRef.current?.play();
+              videoRef.setPlaybackRate(playbackRate);
+              void videoRef.play();
               setIsPaused(false);
             }}
           />
@@ -564,13 +572,53 @@ export default function AnalyzePage() {
           {game.mux_playback_id ? (
             <>
               <div style={{ position: "relative" }}>
-                <VideoPlayer
-                  ref={videoRef}
-                  playbackId={game.mux_playback_id}
-                  posterUrl={posterUrl}
-                  onTimeUpdate={setCurrentMs}
-                />
-                <ShotTooltip shot={playingShot} player={playingShotPlayer} />
+                {popoutActive ? (
+                  <PopoutPlaceholder
+                    currentMs={currentMs}
+                    isPaused={isPaused}
+                    onClose={closePopout}
+                  />
+                ) : (
+                  <>
+                    <VideoPlayer
+                      ref={localVideoRef}
+                      playbackId={game.mux_playback_id}
+                      posterUrl={posterUrl}
+                      onTimeUpdate={setCurrentMs}
+                    />
+                    <ShotTooltip shot={playingShot} player={playingShotPlayer} />
+                  </>
+                )}
+              </div>
+
+              {/* Pop out button */}
+              <div style={{ marginTop: 6, display: "flex", gap: 8, alignItems: "center" }}>
+                {!popoutActive ? (
+                  <button
+                    onClick={openPopout}
+                    style={{
+                      padding: "5px 12px",
+                      fontSize: 12,
+                      fontWeight: 500,
+                      background: "#fff",
+                      color: "#1a73e8",
+                      borderTop: "1px solid #c6dafc",
+                      borderBottom: "1px solid #c6dafc",
+                      borderLeft: "1px solid #c6dafc",
+                      borderRight: "1px solid #c6dafc",
+                      borderRadius: 6,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                    title="Open the video in a new tab — drag it to a second monitor"
+                  >
+                    ⧉ Pop out to new tab
+                  </button>
+                ) : (
+                  <span style={{ fontSize: 11, color: "#4caf50", fontWeight: 600 }}>
+                    ● Video in separate tab
+                  </span>
+                )}
               </div>
               <div style={{ fontSize: 11, color: "#999", marginTop: 8 }}>
                 Shortcuts: <kbd style={kbdStyle}>Space</kbd> play/pause ·{" "}
@@ -669,7 +717,7 @@ export default function AnalyzePage() {
               assessments={assessments}
               currentMs={currentMs}
               onSeek={(ms) => {
-                videoRef.current?.seek(ms);
+                videoRef.seek(ms);
                 setCurrentMs(ms);
               }}
               onReload={reloadNotes}
@@ -689,3 +737,66 @@ const kbdStyle: React.CSSProperties = {
   borderRadius: 3,
   fontFamily: "monospace",
 };
+
+function formatMsStatic(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${r.toString().padStart(2, "0")}`;
+}
+
+function PopoutPlaceholder({
+  currentMs,
+  isPaused,
+  onClose,
+}: {
+  currentMs: number;
+  isPaused: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      style={{
+        aspectRatio: "16/9",
+        background: "#1a1a1a",
+        borderRadius: 10,
+        color: "#ddd",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 10,
+        padding: 16,
+      }}
+    >
+      <div style={{ fontSize: 36 }}>⧉</div>
+      <div style={{ fontWeight: 600, fontSize: 14 }}>Video is in a separate tab</div>
+      <div style={{ fontSize: 12, color: "#aaa", textAlign: "center" }}>
+        Your rally strip, sequences, and notes still control it from here.
+      </div>
+      <div style={{ fontSize: 11, color: "#888", marginTop: 6 }}>
+        {isPaused ? "⏸ Paused" : "▶ Playing"} · {formatMsStatic(currentMs)}
+      </div>
+      <button
+        onClick={onClose}
+        style={{
+          marginTop: 10,
+          padding: "6px 14px",
+          fontSize: 12,
+          fontWeight: 600,
+          background: "transparent",
+          color: "#fff",
+          borderTop: "1px solid #444",
+          borderBottom: "1px solid #444",
+          borderLeft: "1px solid #444",
+          borderRight: "1px solid #444",
+          borderRadius: 6,
+          cursor: "pointer",
+          fontFamily: "inherit",
+        }}
+      >
+        Close popout
+      </button>
+    </div>
+  );
+}

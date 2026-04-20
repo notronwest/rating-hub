@@ -12,6 +12,7 @@ import AnalyzePage from "./pages/AnalyzePage";
 import CoachReviewPage from "./pages/CoachReviewPage";
 import CoachDashboardPage from "./pages/CoachDashboardPage";
 import PbvLinkPage from "./pages/PbvLinkPage";
+import VideoPopoutPage from "./pages/VideoPopoutPage";
 import RequireCoach from "./auth/RequireCoach";
 
 export default function App() {
@@ -20,6 +21,7 @@ export default function App() {
       <Route path="/" element={<OrgPickerPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/pbv-link" element={<PbvLinkPage />} />
+      <Route path="/video-popout/:gameId" element={<VideoPopoutPage />} />
 
       {/* Org-scoped pages with shared layout */}
       <Route path="/org/:orgId" element={<AdminLayout />}>
