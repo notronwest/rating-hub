@@ -261,8 +261,14 @@ export default function ShotSequence({
             const bgColor = isActive ? "#f0f4ff" : isPlaying ? "#e8f0fe" : "#fff";
 
             return (
-              <button
+              <div
                 key={shot.id}
+                style={{
+                  position: "relative",
+                  borderBottom: "1px solid #f0f0f0",
+                }}
+              >
+              <button
                 onClick={() =>
                   buildMode ? onToggleDraftShot(shot.id) : onActivateShot(shot)
                 }
@@ -271,13 +277,13 @@ export default function ShotSequence({
                   alignItems: "center",
                   gap: 10,
                   width: "100%",
-                  padding: "8px 14px",
+                  padding: "8px 40px 8px 14px",
                   fontSize: 13,
                   background: buildMode && draftShotIds.has(shot.id)
                     ? "#fff3cd"
                     : bgColor,
                   borderTop: "none",
-                  borderBottom: "1px solid #f0f0f0",
+                  borderBottom: "none",
                   borderLeft: buildMode && draftShotIds.has(shot.id)
                     ? "3px solid #f59e0b"
                     : isActive
@@ -409,38 +415,49 @@ export default function ShotSequence({
                   </span>
                 )}
 
-                {/* Flag toggle — stop propagation so it doesn't activate the shot */}
-                {!buildMode && (
-                  <span
-                    role="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onToggleFlag(shot.id);
-                    }}
-                    title={flaggedShotIds.has(shot.id) ? "Unflag" : "Flag for review"}
-                    style={{
-                      flexShrink: 0,
-                      fontSize: 14,
-                      padding: "2px 5px",
-                      borderRadius: 4,
-                      cursor: "pointer",
-                      opacity: flaggedShotIds.has(shot.id) ? 1 : 0.35,
-                      color: flaggedShotIds.has(shot.id) ? "#d97706" : "#999",
-                      transition: "opacity 0.1s",
-                    }}
-                    onMouseOver={(e) =>
-                      !flaggedShotIds.has(shot.id) &&
-                      (e.currentTarget.style.opacity = "0.8")
-                    }
-                    onMouseOut={(e) =>
-                      !flaggedShotIds.has(shot.id) &&
-                      (e.currentTarget.style.opacity = "0.35")
-                    }
-                  >
-                    {flaggedShotIds.has(shot.id) ? "🚩" : "⚑"}
-                  </span>
-                )}
               </button>
+              {/* Flag toggle — sibling of the shot button so it never nests inside one */}
+              {!buildMode && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleFlag(shot.id);
+                  }}
+                  title={flaggedShotIds.has(shot.id) ? "Unflag" : "Flag for review"}
+                  style={{
+                    position: "absolute",
+                    right: 10,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    fontSize: 16,
+                    padding: "4px 6px",
+                    borderRadius: 4,
+                    background: "transparent",
+                    borderTop: "none",
+                    borderBottom: "none",
+                    borderLeft: "none",
+                    borderRight: "none",
+                    cursor: "pointer",
+                    opacity: flaggedShotIds.has(shot.id) ? 1 : 0.35,
+                    color: flaggedShotIds.has(shot.id) ? "#d97706" : "#999",
+                    transition: "opacity 0.1s",
+                    fontFamily: "inherit",
+                    lineHeight: 1,
+                  }}
+                  onMouseOver={(e) => {
+                    if (!flaggedShotIds.has(shot.id))
+                      e.currentTarget.style.opacity = "0.85";
+                  }}
+                  onMouseOut={(e) => {
+                    if (!flaggedShotIds.has(shot.id))
+                      e.currentTarget.style.opacity = "0.35";
+                  }}
+                >
+                  {flaggedShotIds.has(shot.id) ? "🚩" : "⚑"}
+                </button>
+              )}
+              </div>
             );
           })}
         </div>

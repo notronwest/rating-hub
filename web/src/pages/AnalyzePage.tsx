@@ -259,7 +259,11 @@ export default function AnalyzePage() {
 
   // Flagged shot handlers
   async function handleToggleFlag(shotId: string) {
-    if (!analysis) return;
+    console.log("[flag] toggle", shotId, "analysis?", !!analysis);
+    if (!analysis) {
+      alert("Analysis not loaded yet — try again in a moment.");
+      return;
+    }
     const alreadyFlagged = flags.some((f) => f.shot_id === shotId);
     try {
       if (alreadyFlagged) {
@@ -273,7 +277,12 @@ export default function AnalyzePage() {
         setFlags((prev) => [...prev, created]);
       }
     } catch (e) {
-      console.error("Toggle flag failed:", e);
+      console.error("[flag] toggle FAILED:", e);
+      alert(
+        `Failed to toggle flag: ${
+          e instanceof Error ? e.message : String(e)
+        }\n\nMost likely cause: migration 011_flagged_shots.sql hasn't been run yet in Supabase.`,
+      );
     }
   }
 
@@ -565,21 +574,63 @@ export default function AnalyzePage() {
         </div>
       )}
 
-      {/* Two-column layout */}
-      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20, alignItems: "start" }}>
+      {/* Two-column layout (collapses to single column when popout is active) */}
+      {popoutActive && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "10px 14px",
+            background: "#1a1a1a",
+            color: "#ddd",
+            borderRadius: 8,
+            marginBottom: 16,
+            fontSize: 13,
+          }}
+        >
+          <span>
+            <span style={{ color: "#4ade80", fontWeight: 600 }}>● Video in separate tab</span>
+            <span style={{ marginLeft: 12, color: "#888", fontSize: 11 }}>
+              {isPaused ? "⏸" : "▶"} {formatMsStatic(currentMs)} · controls on this tab still drive it
+            </span>
+          </span>
+          <button
+            onClick={closePopout}
+            style={{
+              padding: "6px 14px",
+              fontSize: 12,
+              fontWeight: 600,
+              background: "transparent",
+              color: "#fff",
+              borderTop: "1px solid #444",
+              borderBottom: "1px solid #444",
+              borderLeft: "1px solid #444",
+              borderRight: "1px solid #444",
+              borderRadius: 6,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            Close popout
+          </button>
+        </div>
+      )}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: popoutActive ? "1fr" : "2fr 1fr",
+          gap: 20,
+          alignItems: "start",
+        }}
+      >
         {/* Left: video + timeline */}
         <div>
           {game.mux_playback_id ? (
             <>
-              <div style={{ position: "relative" }}>
-                {popoutActive ? (
-                  <PopoutPlaceholder
-                    currentMs={currentMs}
-                    isPaused={isPaused}
-                    onClose={closePopout}
-                  />
-                ) : (
-                  <>
+              {!popoutActive && (
+                <>
+                  <div style={{ position: "relative" }}>
                     <VideoPlayer
                       ref={localVideoRef}
                       playbackId={game.mux_playback_id}
@@ -587,39 +638,33 @@ export default function AnalyzePage() {
                       onTimeUpdate={setCurrentMs}
                     />
                     <ShotTooltip shot={playingShot} player={playingShotPlayer} />
-                  </>
-                )}
-              </div>
+                  </div>
 
-              {/* Pop out button */}
-              <div style={{ marginTop: 6, display: "flex", gap: 8, alignItems: "center" }}>
-                {!popoutActive ? (
-                  <button
-                    onClick={openPopout}
-                    style={{
-                      padding: "5px 12px",
-                      fontSize: 12,
-                      fontWeight: 500,
-                      background: "#fff",
-                      color: "#1a73e8",
-                      borderTop: "1px solid #c6dafc",
-                      borderBottom: "1px solid #c6dafc",
-                      borderLeft: "1px solid #c6dafc",
-                      borderRight: "1px solid #c6dafc",
-                      borderRadius: 6,
-                      cursor: "pointer",
-                      fontFamily: "inherit",
-                    }}
-                    title="Open the video in a new tab — drag it to a second monitor"
-                  >
-                    ⧉ Pop out to new tab
-                  </button>
-                ) : (
-                  <span style={{ fontSize: 11, color: "#4caf50", fontWeight: 600 }}>
-                    ● Video in separate tab
-                  </span>
-                )}
-              </div>
+                  {/* Pop out button */}
+                  <div style={{ marginTop: 6, display: "flex", gap: 8, alignItems: "center" }}>
+                    <button
+                      onClick={openPopout}
+                      style={{
+                        padding: "5px 12px",
+                        fontSize: 12,
+                        fontWeight: 500,
+                        background: "#fff",
+                        color: "#1a73e8",
+                        borderTop: "1px solid #c6dafc",
+                        borderBottom: "1px solid #c6dafc",
+                        borderLeft: "1px solid #c6dafc",
+                        borderRight: "1px solid #c6dafc",
+                        borderRadius: 6,
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                      }}
+                      title="Open the video in a new tab — drag it to a second monitor"
+                    >
+                      ⧉ Pop out to new tab
+                    </button>
+                  </div>
+                </>
+              )}
               <div style={{ fontSize: 11, color: "#999", marginTop: 8 }}>
                 Shortcuts: <kbd style={kbdStyle}>Space</kbd> play/pause ·{" "}
                 <kbd style={kbdStyle}>[</kbd> prev rally ·{" "}
@@ -745,58 +790,3 @@ function formatMsStatic(ms: number): string {
   return `${m}:${r.toString().padStart(2, "0")}`;
 }
 
-function PopoutPlaceholder({
-  currentMs,
-  isPaused,
-  onClose,
-}: {
-  currentMs: number;
-  isPaused: boolean;
-  onClose: () => void;
-}) {
-  return (
-    <div
-      style={{
-        aspectRatio: "16/9",
-        background: "#1a1a1a",
-        borderRadius: 10,
-        color: "#ddd",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 10,
-        padding: 16,
-      }}
-    >
-      <div style={{ fontSize: 36 }}>⧉</div>
-      <div style={{ fontWeight: 600, fontSize: 14 }}>Video is in a separate tab</div>
-      <div style={{ fontSize: 12, color: "#aaa", textAlign: "center" }}>
-        Your rally strip, sequences, and notes still control it from here.
-      </div>
-      <div style={{ fontSize: 11, color: "#888", marginTop: 6 }}>
-        {isPaused ? "⏸ Paused" : "▶ Playing"} · {formatMsStatic(currentMs)}
-      </div>
-      <button
-        onClick={onClose}
-        style={{
-          marginTop: 10,
-          padding: "6px 14px",
-          fontSize: 12,
-          fontWeight: 600,
-          background: "transparent",
-          color: "#fff",
-          borderTop: "1px solid #444",
-          borderBottom: "1px solid #444",
-          borderLeft: "1px solid #444",
-          borderRight: "1px solid #444",
-          borderRadius: 6,
-          cursor: "pointer",
-          fontFamily: "inherit",
-        }}
-      >
-        Close popout
-      </button>
-    </div>
-  );
-}
