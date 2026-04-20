@@ -434,6 +434,59 @@ export default function AnalyzePage() {
         )}
       </div>
 
+      {/* Start Here: Reasons for Losing Rally + Coach Review entry point */}
+      {rallies.length > 0 && shots.length > 0 && (
+        <div style={{ marginBottom: 20 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "12px 16px",
+              background: "linear-gradient(90deg, #fff7e6 0%, #f0f4ff 100%)",
+              border: "1px solid #f0d169",
+              borderRadius: 10,
+              marginBottom: 12,
+            }}
+          >
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#7a5d00", marginBottom: 2 }}>
+                ⭐ Start Here — Coach Review
+              </div>
+              <div style={{ fontSize: 12, color: "#555" }}>
+                Pick a player and walk through their rally losses one at a time.
+                Each loss is auto-built into a 5-shot sequence ending on the
+                error so you can see the setup.
+              </div>
+            </div>
+            <Link
+              to={`/org/${orgId}/games/${gameId}/coach-review`}
+              style={{
+                padding: "10px 18px",
+                fontSize: 13,
+                fontWeight: 700,
+                background: "#1a73e8",
+                color: "#fff",
+                borderRadius: 6,
+                textDecoration: "none",
+                whiteSpace: "nowrap",
+                flexShrink: 0,
+                marginLeft: 16,
+              }}
+            >
+              Start Coach Review →
+            </Link>
+          </div>
+          <ReasonsForLosingRally
+            rallies={rallies}
+            shots={shots}
+            players={players}
+            scoringType={game.scoring_type}
+            focusedPlayerIndex={focusedPlayerIndex}
+          />
+        </div>
+      )}
+
       {/* Rally strip — horizontal navigator for all rallies in this game */}
       {rallies.length > 0 && (
         <div style={{ marginBottom: 16 }}>
@@ -562,55 +615,6 @@ export default function AnalyzePage() {
         </div>
       </div>
 
-      {/* Reasons for Losing Rally — full width below the main analyze area */}
-      {rallies.length > 0 && shots.length > 0 && (
-        <div style={{ marginTop: 20 }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "10px 14px",
-              background: "#f0f4ff",
-              border: "1px solid #d4dff7",
-              borderRadius: 10,
-              marginBottom: 12,
-            }}
-          >
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: "#1a73e8" }}>
-                Review a player's losses, one at a time →
-              </div>
-              <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>
-                Focused workflow: auto-builds a 5-shot sequence leading to each
-                error and walks you through them.
-              </div>
-            </div>
-            <Link
-              to={`/org/${orgId}/games/${gameId}/coach-review`}
-              style={{
-                padding: "8px 16px",
-                fontSize: 13,
-                fontWeight: 600,
-                background: "#1a73e8",
-                color: "#fff",
-                borderRadius: 6,
-                textDecoration: "none",
-                whiteSpace: "nowrap",
-              }}
-            >
-              Start Coach Review →
-            </Link>
-          </div>
-          <ReasonsForLosingRally
-            rallies={rallies}
-            shots={shots}
-            players={players}
-            scoringType={game.scoring_type}
-            focusedPlayerIndex={focusedPlayerIndex}
-          />
-        </div>
-      )}
     </div>
   );
 }
