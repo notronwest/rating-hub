@@ -4,8 +4,6 @@ import { supabase } from "../supabase";
 import { useAuth } from "../auth/AuthProvider";
 import {
   getOrCreateAnalysis,
-  listAssessments,
-  listNotes,
   listSequences,
   listFlaggedShots,
   flagShot,
@@ -13,10 +11,9 @@ import {
   setGameMuxPlaybackId,
 } from "../lib/coachApi";
 import { pbvPosterUrl } from "../lib/pbvVideo";
-import type { GameAnalysis, AnalysisNote, PlayerAssessment, AnalysisSequence, FlaggedShot } from "../types/coach";
+import type { GameAnalysis, AnalysisSequence, FlaggedShot } from "../types/coach";
 import VideoPlayer, { type VideoPlayerHandle } from "../components/analyze/VideoPlayer";
 import { useVideoPopout } from "../hooks/useVideoPopout";
-import NotesPanel from "../components/analyze/NotesPanel";
 import VideoUrlInput from "../components/analyze/VideoUrlInput";
 import ShotSequence from "../components/analyze/ShotSequence";
 import RallyStrip from "../components/analyze/RallyStrip";
@@ -74,8 +71,6 @@ export default function AnalyzePage() {
   const [rallies, setRallies] = useState<RallyRow[]>([]);
   const [shots, setShots] = useState<RallyShot[]>([]);
   const [analysis, setAnalysis] = useState<GameAnalysis | null>(null);
-  const [notes, setNotes] = useState<AnalysisNote[]>([]);
-  const [assessments, setAssessments] = useState<PlayerAssessment[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Shot playback controls
@@ -175,16 +170,12 @@ export default function AnalyzePage() {
         if (cancelled) return;
         setAnalysis(a);
 
-        // Load notes + assessments + sequences + flagged shots
-        const [n, asss, seqs, flg] = await Promise.all([
-          listNotes(a.id),
-          listAssessments(a.id),
+        // Load sequences + flagged shots
+        const [seqs, flg] = await Promise.all([
           listSequences(a.id),
           listFlaggedShots(a.id),
         ]);
         if (!cancelled) {
-          setNotes(n);
-          setAssessments(asss);
           setSequences(seqs);
           setFlags(flg);
         }
@@ -202,14 +193,10 @@ export default function AnalyzePage() {
 
   const reloadNotes = useCallback(async () => {
     if (!analysis) return;
-    const [n, asss, seqs, flg] = await Promise.all([
-      listNotes(analysis.id),
-      listAssessments(analysis.id),
+    const [seqs, flg] = await Promise.all([
       listSequences(analysis.id),
       listFlaggedShots(analysis.id),
     ]);
-    setNotes(n);
-    setAssessments(asss);
     setSequences(seqs);
     setFlags(flg);
   }, [analysis]);
@@ -574,7 +561,7 @@ export default function AnalyzePage() {
         </div>
       )}
 
-      {/* Two-column layout (collapses to single column when popout is active) */}
+      {/* Main content area */}
       {popoutActive && (
         <div
           style={{
@@ -619,7 +606,7 @@ export default function AnalyzePage() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: popoutActive ? "1fr" : "2fr 1fr",
+          gridTemplateColumns: "1fr",
           gap: 20,
           alignItems: "start",
         }}
@@ -750,25 +737,6 @@ export default function AnalyzePage() {
           )}
         </div>
 
-        {/* Right: notes panel */}
-        <div>
-          {analysis && (
-            <NotesPanel
-              analysisId={analysis.id}
-              overallNotes={analysis.overall_notes}
-              players={players}
-              rallies={rallies}
-              notes={notes}
-              assessments={assessments}
-              currentMs={currentMs}
-              onSeek={(ms) => {
-                videoRef.seek(ms);
-                setCurrentMs(ms);
-              }}
-              onReload={reloadNotes}
-            />
-          )}
-        </div>
       </div>
 
     </div>

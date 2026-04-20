@@ -20,6 +20,9 @@ import {
   listSequences,
   createSequence,
   updateSequence,
+  listFlaggedShots,
+  unflagShot,
+  updateFlagNote,
   setGameMuxPlaybackId,
 } from "../lib/coachApi";
 import { pbvPosterUrl, formatMs } from "../lib/pbvVideo";
@@ -29,7 +32,7 @@ import {
   REASON_LABELS,
   type ReasonId,
 } from "../lib/rallyAnalysis";
-import type { GameAnalysis, AnalysisSequence } from "../types/coach";
+import type { GameAnalysis, AnalysisSequence, FlaggedShot } from "../types/coach";
 import type { RallyShot } from "../types/database";
 import VideoPlayer, { type VideoPlayerHandle } from "../components/analyze/VideoPlayer";
 import VideoUrlInput from "../components/analyze/VideoUrlInput";
@@ -85,7 +88,11 @@ export default function CoachReviewPage() {
   const [shots, setShots] = useState<RallyShot[]>([]);
   const [analysis, setAnalysis] = useState<GameAnalysis | null>(null);
   const [sequences, setSequences] = useState<AnalysisSequence[]>([]);
+  const [flags, setFlags] = useState<FlaggedShot[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Mode: walk through losses OR walk through this player's flagged shots
+  const [reviewMode, setReviewMode] = useState<"losses" | "flags">("losses");
 
   const playerIdParam = searchParams.get("playerId") ?? "";
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -162,13 +169,19 @@ export default function CoachReviewPage() {
         setShots((shotData ?? []) as RallyShot[]);
       }
 
-      // Analysis + sequences
+      // Analysis + sequences + flags
       try {
         const a = await getOrCreateAnalysis(g.id, g.org_id, user.id);
         if (cancelled) return;
         setAnalysis(a);
-        const seqs = await listSequences(a.id);
-        if (!cancelled) setSequences(seqs);
+        const [seqs, flg] = await Promise.all([
+          listSequences(a.id),
+          listFlaggedShots(a.id),
+        ]);
+        if (!cancelled) {
+          setSequences(seqs);
+          setFlags(flg);
+        }
       } catch (e) {
         console.error("Failed to load analysis:", e);
       }
@@ -246,9 +259,68 @@ export default function CoachReviewPage() {
     return out;
   }, [selectedPlayer, rallies, shots, sequences]);
 
-  const currentLoss = losses[currentIdx] ?? null;
+  // Build a parallel "flag review" list for the selected player's flagged shots
+  const flagReviews: PlayerLoss[] = useMemo(() => {
+    if (!selectedPlayer) return [];
+    const shotsByRally = new Map<string, RallyShot[]>();
+    for (const s of shots) {
+      if (!shotsByRally.has(s.rally_id)) shotsByRally.set(s.rally_id, []);
+      shotsByRally.get(s.rally_id)!.push(s);
+    }
 
-  // Seek when loss changes, load existing notes
+    const out: PlayerLoss[] = [];
+    for (const flag of flags) {
+      const shot = shots.find((s) => s.id === flag.shot_id);
+      if (!shot || shot.player_index !== selectedPlayer.player_index) continue;
+      const rs = (shotsByRally.get(shot.rally_id) ?? []).sort(
+        (a, b) => a.shot_index - b.shot_index,
+      );
+      const rally = rallies.find((r) => r.id === shot.rally_id);
+      if (!rally) continue;
+
+      // Auto-build a 4-shot context ending at the flagged shot
+      const seqIds = buildLossSequence(rs, shot, 3);
+      const seqShots = seqIds
+        .map((id) => rs.find((s) => s.id === id))
+        .filter((s): s is RallyShot => !!s);
+      if (seqShots.length === 0) continue;
+      const start = Math.min(...seqShots.map((s) => s.start_ms));
+      const end = Math.max(...seqShots.map((s) => s.end_ms));
+
+      const existingSequence = sequences.find(
+        (seq) =>
+          seq.rally_id === rally.id &&
+          seq.player_id === selectedPlayer.id &&
+          seq.shot_ids.length === seqIds.length &&
+          seq.shot_ids.every((id) => seqIds.includes(id)),
+      ) ?? null;
+
+      out.push({
+        rallyId: rally.id,
+        rallyIndex: rally.rally_index,
+        reason: "unforced" as ReasonId, // placeholder — not used in flag mode
+        sequenceShotIds: seqIds,
+        sequenceStartMs: start,
+        sequenceEndMs: end,
+        attributedShotId: shot.id,
+        existingSequence,
+        scoreAfter:
+          rally.score_team0 != null && rally.score_team1 != null
+            ? `${rally.score_team0}–${rally.score_team1}`
+            : null,
+      });
+    }
+    return out;
+  }, [selectedPlayer, flags, shots, rallies, sequences]);
+
+  const items = reviewMode === "flags" ? flagReviews : losses;
+  const currentLoss = items[currentIdx] ?? null;
+  const currentFlag =
+    reviewMode === "flags" && currentLoss
+      ? flags.find((f) => f.shot_id === currentLoss.attributedShotId) ?? null
+      : null;
+
+  // Seek when loss/flag changes, load existing notes
   useEffect(() => {
     if (!currentLoss) return;
     videoRef.current?.seek(currentLoss.sequenceStartMs);
@@ -258,12 +330,12 @@ export default function CoachReviewPage() {
     setHowToFix(currentLoss.existingSequence?.how_to_fix ?? "");
     setSaveMsg(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentLoss?.rallyId]);
+  }, [currentLoss?.attributedShotId, reviewMode]);
 
-  // Reset index when player changes
+  // Reset index when player or mode changes
   useEffect(() => {
     setCurrentIdx(0);
-  }, [playerIdParam]);
+  }, [playerIdParam, reviewMode]);
 
   // Loop the current sequence
   useEffect(() => {
@@ -300,7 +372,10 @@ export default function CoachReviewPage() {
           analysisId: analysis.id,
           rallyId: currentLoss.rallyId,
           shotIds: currentLoss.sequenceShotIds,
-          label: `${REASON_LABELS[currentLoss.reason]} · Rally ${currentLoss.rallyIndex + 1}`,
+          label:
+            reviewMode === "flags"
+              ? `🚩 Flag · Rally ${currentLoss.rallyIndex + 1}`
+              : `${REASON_LABELS[currentLoss.reason]} · Rally ${currentLoss.rallyIndex + 1}`,
           playerId: selectedPlayer.id,
           whatWentWrong: whatWentWrong.trim() || null,
           howToFix: howToFix.trim() || null,
@@ -308,7 +383,7 @@ export default function CoachReviewPage() {
       }
       await reloadSequences();
       setSaveMsg("✓ Saved");
-      if (advance && currentIdx < losses.length - 1) {
+      if (advance && currentIdx < items.length - 1) {
         setTimeout(() => {
           setCurrentIdx((i) => i + 1);
           setSaveMsg(null);
@@ -324,7 +399,7 @@ export default function CoachReviewPage() {
   }
 
   function handleSkip() {
-    if (currentIdx < losses.length - 1) setCurrentIdx(currentIdx + 1);
+    if (currentIdx < items.length - 1) setCurrentIdx(currentIdx + 1);
   }
 
   function handlePrev() {
@@ -363,7 +438,7 @@ export default function CoachReviewPage() {
         .filter((s): s is RallyShot => !!s)
     : [];
 
-  const reviewedCount = losses.filter((l) => l.existingSequence != null).length;
+  const reviewedCount = items.filter((l) => l.existingSequence != null).length;
 
   return (
     <div style={{ maxWidth: 1400 }}>
@@ -420,27 +495,52 @@ export default function CoachReviewPage() {
 
       {!selectedPlayer ? (
         <PlayerPickerGrid players={players} onPick={handlePickPlayer} />
-      ) : losses.length === 0 ? (
-        <div
-          style={{
-            padding: 40,
-            background: "#f8f9fa",
-            border: "1px solid #e2e2e2",
-            borderRadius: 10,
-            textAlign: "center",
-            color: "#666",
-          }}
-        >
-          <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
-            No losses to review for {selectedPlayer.display_name}
-          </div>
-          <div style={{ fontSize: 13 }}>
-            Either they didn't personally lose a rally or the AI couldn't
-            attribute any fault shots to them.
-          </div>
-        </div>
       ) : (
         <>
+          {/* Mode tabs */}
+          <div style={{ display: "flex", gap: 0, marginBottom: 14 }}>
+            <ModeTab
+              active={reviewMode === "losses"}
+              onClick={() => setReviewMode("losses")}
+              position="left"
+            >
+              Rally Losses
+              <span style={{ marginLeft: 6, opacity: 0.7 }}>({losses.length})</span>
+            </ModeTab>
+            <ModeTab
+              active={reviewMode === "flags"}
+              onClick={() => setReviewMode("flags")}
+              position="right"
+            >
+              🚩 Flagged Shots
+              <span style={{ marginLeft: 6, opacity: 0.7 }}>({flagReviews.length})</span>
+            </ModeTab>
+          </div>
+
+          {items.length === 0 ? (
+            <div
+              style={{
+                padding: 40,
+                background: "#f8f9fa",
+                border: "1px solid #e2e2e2",
+                borderRadius: 10,
+                textAlign: "center",
+                color: "#666",
+              }}
+            >
+              <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
+                {reviewMode === "flags"
+                  ? `No flagged shots for ${selectedPlayer.display_name}`
+                  : `No losses to review for ${selectedPlayer.display_name}`}
+              </div>
+              <div style={{ fontSize: 13 }}>
+                {reviewMode === "flags"
+                  ? "Go to the analyze page, click the flag icon on any of this player's shots, then come back here."
+                  : "Either they didn't personally lose a rally or the AI couldn't attribute any fault shots to them."}
+              </div>
+            </div>
+          ) : (
+            <>
           {/* Progress bar */}
           <div
             style={{
@@ -455,8 +555,9 @@ export default function CoachReviewPage() {
             }}
           >
             <span style={{ fontSize: 12, color: "#666" }}>
-              Loss <b style={{ color: "#333" }}>{currentIdx + 1}</b> of{" "}
-              <b style={{ color: "#333" }}>{losses.length}</b>
+              {reviewMode === "flags" ? "Flag" : "Loss"}{" "}
+              <b style={{ color: "#333" }}>{currentIdx + 1}</b> of{" "}
+              <b style={{ color: "#333" }}>{items.length}</b>
               <span style={{ marginLeft: 8, color: "#999" }}>
                 · {reviewedCount} reviewed
               </span>
@@ -474,7 +575,7 @@ export default function CoachReviewPage() {
                 style={{
                   height: "100%",
                   background: "#1a73e8",
-                  width: `${(reviewedCount / losses.length) * 100}%`,
+                  width: `${(reviewedCount / items.length) * 100}%`,
                   transition: "width 0.2s",
                 }}
               />
@@ -484,8 +585,8 @@ export default function CoachReviewPage() {
             </button>
             <button
               onClick={handleSkip}
-              disabled={currentIdx >= losses.length - 1}
-              style={navBtn(currentIdx >= losses.length - 1)}
+              disabled={currentIdx >= items.length - 1}
+              style={navBtn(currentIdx >= items.length - 1)}
             >
               Skip →
             </button>
@@ -557,8 +658,8 @@ export default function CoachReviewPage() {
                     <span
                       style={{
                         padding: "3px 10px",
-                        background: "#fce8e6",
-                        color: "#c62828",
+                        background: reviewMode === "flags" ? "#fff3cd" : "#fce8e6",
+                        color: reviewMode === "flags" ? "#856404" : "#c62828",
                         borderRadius: 4,
                         fontSize: 11,
                         fontWeight: 700,
@@ -566,7 +667,9 @@ export default function CoachReviewPage() {
                         letterSpacing: 0.3,
                       }}
                     >
-                      {REASON_LABELS[currentLoss.reason]}
+                      {reviewMode === "flags"
+                        ? "🚩 Flagged"
+                        : REASON_LABELS[currentLoss.reason]}
                     </span>
                     <span style={{ fontSize: 13, fontWeight: 600, color: "#333" }}>
                       Rally {currentLoss.rallyIndex + 1}
@@ -593,9 +696,60 @@ export default function CoachReviewPage() {
                     )}
                   </div>
                   <div style={{ fontSize: 12, color: "#666" }}>
-                    {seqShots.length} shots leading to the error · {formatMs(currentLoss.sequenceStartMs)}–
+                    {seqShots.length} shots{" "}
+                    {reviewMode === "flags" ? "around the flag" : "leading to the error"}{" "}
+                    · {formatMs(currentLoss.sequenceStartMs)}–
                     {formatMs(currentLoss.sequenceEndMs)}
                   </div>
+
+                  {/* Flag-specific: show the flag's own note + unflag button */}
+                  {reviewMode === "flags" && currentFlag && (
+                    <div
+                      style={{
+                        marginTop: 10,
+                        padding: "8px 10px",
+                        background: "#fff8e1",
+                        border: "1px solid #f0d169",
+                        borderRadius: 6,
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: 10,
+                      }}
+                    >
+                      <span style={{ fontSize: 14 }}>🚩</span>
+                      <div style={{ flex: 1, fontSize: 12 }}>
+                        <div style={{ color: "#7a5d00", fontWeight: 600, marginBottom: 2 }}>
+                          Flag note
+                        </div>
+                        <FlagNoteInput
+                          flag={currentFlag}
+                          onSaved={reloadSequences}
+                        />
+                      </div>
+                      <button
+                        onClick={async () => {
+                          if (!confirm("Remove this flag?")) return;
+                          await unflagShot(currentFlag.analysis_id, currentFlag.shot_id);
+                          await reloadSequences();
+                        }}
+                        style={{
+                          padding: "4px 10px",
+                          fontSize: 11,
+                          background: "#fff",
+                          color: "#7a5d00",
+                          borderTop: "1px solid #f0d169",
+                          borderBottom: "1px solid #f0d169",
+                          borderLeft: "1px solid #f0d169",
+                          borderRight: "1px solid #f0d169",
+                          borderRadius: 4,
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        Unflag
+                      </button>
+                    </div>
+                  )}
                   {/* Inline shot chain */}
                   <div
                     style={{
@@ -734,9 +888,99 @@ export default function CoachReviewPage() {
               </div>
             </div>
           )}
+            </>
+          )}
         </>
       )}
     </div>
+  );
+}
+
+function FlagNoteInput({
+  flag,
+  onSaved,
+}: {
+  flag: FlaggedShot;
+  onSaved: () => void;
+}) {
+  const [value, setValue] = useState(flag.note ?? "");
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    setValue(flag.note ?? "");
+  }, [flag.id, flag.note]);
+
+  async function save() {
+    setSaving(true);
+    try {
+      await updateFlagNote(flag.id, value.trim() || null);
+      onSaved();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ display: "flex", gap: 6 }}>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={save}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        }}
+        placeholder="Quick note on this flag (optional)…"
+        style={{
+          flex: 1,
+          padding: "4px 8px",
+          fontSize: 12,
+          borderTop: "1px solid #ddd",
+          borderBottom: "1px solid #ddd",
+          borderLeft: "1px solid #ddd",
+          borderRight: "1px solid #ddd",
+          borderRadius: 4,
+          outline: "none",
+          fontFamily: "inherit",
+        }}
+      />
+      {saving && <span style={{ fontSize: 11, color: "#888" }}>saving…</span>}
+    </div>
+  );
+}
+
+function ModeTab({
+  active,
+  position,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  position: "left" | "right";
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: "8px 18px",
+        fontSize: 13,
+        fontWeight: active ? 700 : 500,
+        borderTop: `1px solid ${active ? "#1a73e8" : "#ddd"}`,
+        borderBottom: `1px solid ${active ? "#1a73e8" : "#ddd"}`,
+        borderLeft: `1px solid ${active ? "#1a73e8" : "#ddd"}`,
+        borderRight: `1px solid ${active ? "#1a73e8" : "#ddd"}`,
+        borderRadius:
+          position === "left" ? "6px 0 0 6px" : "0 6px 6px 0",
+        marginLeft: position === "right" ? -1 : 0,
+        background: active ? "#e8f0fe" : "#fff",
+        color: active ? "#1a73e8" : "#555",
+        cursor: "pointer",
+        fontFamily: "inherit",
+      }}
+    >
+      {children}
+    </button>
   );
 }
 
