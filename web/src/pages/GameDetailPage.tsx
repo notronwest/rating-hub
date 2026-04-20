@@ -6,11 +6,13 @@ import { computeHighlights, GameHighlightsFull, type GameHighlightData } from ".
 import { useIsCoach } from "../auth/useOrgRole";
 import { getAnalysisByGameId } from "../lib/coachApi";
 import type { GameAnalysis } from "../types/coach";
+import TeamStatsBlock from "../components/game/TeamStatsBlock";
 
 interface PlayerCard {
   gp: GamePlayer;
   name: string;
   slug: string;
+  avatar_url: string | null;
   shotTypes: GamePlayerShotType[];
   courtZones: GamePlayerCourtZone[];
 }
@@ -21,7 +23,7 @@ export default function GameDetailPage() {
   const fromPlayer = searchParams.get("from") === "player";
   const [game, setGame] = useState<Game | null>(null);
   const [playerCards, setPlayerCards] = useState<PlayerCard[]>([]);
-  const [rallies, setRallies] = useState<{ shot_count: number | null }[]>([]);
+  const [rallies, setRallies] = useState<{ shot_count: number | null; winning_team: number | null }[]>([]);
   const [allShotTypes, setAllShotTypes] = useState<GamePlayerShotType[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -59,18 +61,21 @@ export default function GameDetailPage() {
       const playerIds = gps.map((gp) => gp.player_id);
       const { data: players } = await supabase
         .from("players")
-        .select("id, display_name, slug")
+        .select("id, display_name, slug, avatar_url")
         .in("id", playerIds);
 
       const playerMap = new Map(
-        (players ?? []).map((p) => [p.id, { name: p.display_name, slug: p.slug }]),
+        (players ?? []).map((p) => [p.id, { name: p.display_name, slug: p.slug, avatar_url: p.avatar_url ?? null }]),
       );
 
       // Fetch shot types, court zones, and rallies
       const [stRes, czRes, rallyRes] = await Promise.all([
         supabase.from("game_player_shot_types").select("*").eq("game_id", gameId),
         supabase.from("game_player_court_zones").select("*").eq("game_id", gameId),
-        supabase.from("rallies").select("shot_count").eq("game_id", gameId),
+        supabase
+          .from("rallies")
+          .select("shot_count, winning_team")
+          .eq("game_id", gameId),
       ]);
 
       const shotTypes = stRes.data;
@@ -82,6 +87,7 @@ export default function GameDetailPage() {
         gp,
         name: playerMap.get(gp.player_id)?.name ?? "Unknown",
         slug: playerMap.get(gp.player_id)?.slug ?? "",
+        avatar_url: playerMap.get(gp.player_id)?.avatar_url ?? null,
         shotTypes: (shotTypes ?? []).filter((st) => st.player_id === gp.player_id),
         courtZones: (courtZones ?? []).filter((cz) => cz.player_id === gp.player_id),
       }));
@@ -190,6 +196,26 @@ export default function GameDetailPage() {
 
       {/* Highlights */}
       {highlights.length > 0 && <GameHighlightsFull highlights={highlights} />}
+
+      {/* Team-level stats */}
+      {playerCards.length > 0 && (
+        <div style={{ marginBottom: 32 }}>
+          <TeamStatsBlock
+            players={playerCards.map((c) => ({
+              id: c.gp.player_id,
+              player_index: c.gp.player_index,
+              display_name: c.name,
+              team: c.gp.team,
+              avatar_url: c.avatar_url,
+            }))}
+            gamePlayers={playerCards.map((c) => c.gp)}
+            shotTypes={allShotTypes}
+            rallies={rallies}
+            team0KitchenPct={game.team0_kitchen_pct}
+            team1KitchenPct={game.team1_kitchen_pct}
+          />
+        </div>
+      )}
 
       {/* Teams */}
       {[team0, team1].map((team, teamIdx) => (

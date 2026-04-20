@@ -592,141 +592,136 @@ export default function AnalyzePage() {
           </button>
         </div>
       )}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr",
-          gap: 20,
-          alignItems: "start",
-        }}
-      >
-        {/* Left: video + timeline */}
-        <div>
-          {game.mux_playback_id ? (
-            <>
-              {!popoutActive && (
-                <>
-                  <div style={{ position: "relative" }}>
-                    <VideoPlayer
-                      ref={localVideoRef}
-                      playbackId={game.mux_playback_id}
-                      posterUrl={posterUrl}
-                      onTimeUpdate={setCurrentMs}
-                    />
-                    <ShotTooltip shot={playingShot} player={playingShotPlayer} />
-                  </div>
-
-                  {/* Pop out button */}
-                  <div style={{ marginTop: 6, display: "flex", gap: 8, alignItems: "center" }}>
-                    <button
-                      onClick={openPopout}
-                      style={{
-                        padding: "5px 12px",
-                        fontSize: 12,
-                        fontWeight: 500,
-                        background: "#fff",
-                        color: "#1a73e8",
-                        borderTop: "1px solid #c6dafc",
-                        borderBottom: "1px solid #c6dafc",
-                        borderLeft: "1px solid #c6dafc",
-                        borderRight: "1px solid #c6dafc",
-                        borderRadius: 6,
-                        cursor: "pointer",
-                        fontFamily: "inherit",
-                      }}
-                      title="Open the video in a new tab — drag it to a second monitor"
-                    >
-                      ⧉ Pop out to new tab
-                    </button>
-                  </div>
-                </>
-              )}
-              <div style={{ fontSize: 11, color: "#999", marginTop: 8 }}>
-                Shortcuts: <kbd style={kbdStyle}>Space</kbd> play/pause ·{" "}
-                <kbd style={kbdStyle}>[</kbd> prev rally ·{" "}
-                <kbd style={kbdStyle}>]</kbd> next rally
-              </div>
-
-              {/* Flagged shots — coach bookmarks. Appears under the video. */}
-              {flags.length > 0 && (
-                <div style={{ marginTop: 12 }}>
-                  <FlaggedShotsPanel
-                    flags={flags}
-                    shots={shots}
-                    rallies={rallies}
-                    players={players}
-                    onJumpToShot={handleJumpToFlaggedShot}
-                    onUnflag={handleToggleFlag}
-                    onReload={reloadNotes}
+      {game.mux_playback_id ? (
+        <>
+          {/* Top row: video on the left, shot-in-rally list alongside on the right */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: popoutActive ? "1fr" : "2fr 1fr",
+              gap: 20,
+              alignItems: "start",
+            }}
+          >
+            {/* Left: video + controls */}
+            {!popoutActive && (
+              <div>
+                <div style={{ position: "relative" }}>
+                  <VideoPlayer
+                    ref={localVideoRef}
+                    playbackId={game.mux_playback_id}
+                    posterUrl={posterUrl}
+                    onTimeUpdate={setCurrentMs}
                   />
+                  <ShotTooltip shot={playingShot} player={playingShotPlayer} />
                 </div>
-              )}
 
-              {/* Player focus filter */}
-              <div style={{ marginTop: 16, paddingBottom: 10, borderBottom: "1px solid #eee" }}>
+                <div style={{ marginTop: 6, display: "flex", gap: 8, alignItems: "center" }}>
+                  <button
+                    onClick={openPopout}
+                    style={{
+                      padding: "5px 12px",
+                      fontSize: 12,
+                      fontWeight: 500,
+                      background: "#fff",
+                      color: "#1a73e8",
+                      borderTop: "1px solid #c6dafc",
+                      borderBottom: "1px solid #c6dafc",
+                      borderLeft: "1px solid #c6dafc",
+                      borderRight: "1px solid #c6dafc",
+                      borderRadius: 6,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                    title="Open the video in a new tab — drag it to a second monitor"
+                  >
+                    ⧉ Pop out to new tab
+                  </button>
+                  <span style={{ fontSize: 11, color: "#999", marginLeft: "auto" }}>
+                    <kbd style={kbdStyle}>Space</kbd> play/pause ·{" "}
+                    <kbd style={kbdStyle}>[</kbd> prev ·{" "}
+                    <kbd style={kbdStyle}>]</kbd> next
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Right: shot list for the current rally, with focus filter on top */}
+            <div>
+              <div style={{ marginBottom: 8 }}>
                 <PlayerFocusBar
                   players={players}
                   focusedPlayerIndex={focusedPlayerIndex}
                   onFocus={setFocusedPlayerIndex}
                 />
               </div>
+              <ShotSequence
+                rally={currentRally}
+                shots={currentRallyShots}
+                players={players}
+                currentMs={currentMs}
+                activeShotId={activeShotId}
+                isLooping={isLooping}
+                playbackRate={playbackRate}
+                isPaused={isPaused}
+                onActivateShot={handleActivateShot}
+                onReplayShot={handleReplayShot}
+                onToggleLoop={handleToggleLoop}
+                onSetPlaybackRate={handleSetPlaybackRate}
+                onTogglePlay={handleTogglePlay}
+                buildMode={buildMode}
+                draftShotIds={draftShotIds}
+                onToggleBuildMode={handleToggleBuildMode}
+                onToggleDraftShot={handleToggleDraftShot}
+                flaggedShotIds={flaggedShotIds}
+                onToggleFlag={handleToggleFlag}
+              />
+            </div>
+          </div>
 
-              {/* Shot sequence for the current rally */}
-              <div style={{ marginTop: 16 }}>
-                <ShotSequence
-                  rally={currentRally}
-                  shots={currentRallyShots}
-                  players={players}
-                  currentMs={currentMs}
-                  activeShotId={activeShotId}
-                  isLooping={isLooping}
-                  playbackRate={playbackRate}
-                  isPaused={isPaused}
-                  onActivateShot={handleActivateShot}
-                  onReplayShot={handleReplayShot}
-                  onToggleLoop={handleToggleLoop}
-                  onSetPlaybackRate={handleSetPlaybackRate}
-                  onTogglePlay={handleTogglePlay}
-                  buildMode={buildMode}
-                  draftShotIds={draftShotIds}
-                  onToggleBuildMode={handleToggleBuildMode}
-                  onToggleDraftShot={handleToggleDraftShot}
-                  flaggedShotIds={flaggedShotIds}
-                  onToggleFlag={handleToggleFlag}
-                />
-              </div>
-
-              {/* Sequence manager: build form + saved sequences for current rally */}
-              {analysis && (
-                <div style={{ marginTop: 12 }}>
-                  <SequenceManager
-                    analysisId={analysis.id}
-                    rally={currentRally}
-                    shots={shots}
-                    players={players}
-                    sequences={sequences}
-                    activeSequenceId={activeSequenceId}
-                    buildMode={buildMode}
-                    draftShotIds={draftShotIds}
-                    focusedPlayerIndex={focusedPlayerIndex}
-                    onCancelBuild={() => setBuildMode(false)}
-                    onClearDraft={handleClearDraft}
-                    onPlayDraft={handlePlayDraft}
-                    onActivateSequence={handleActivateSequence}
-                    onReload={reloadNotes}
-                  />
-                </div>
-              )}
-            </>
-          ) : (
-            <VideoUrlInput
-              pbvisionVideoId={game.pbvision_video_id}
-              onSubmit={handlePlaybackIdSave}
-            />
+          {/* Below: sequence manager (full width) */}
+          {analysis && (
+            <div style={{ marginTop: 16 }}>
+              <SequenceManager
+                analysisId={analysis.id}
+                rally={currentRally}
+                shots={shots}
+                players={players}
+                sequences={sequences}
+                activeSequenceId={activeSequenceId}
+                buildMode={buildMode}
+                draftShotIds={draftShotIds}
+                focusedPlayerIndex={focusedPlayerIndex}
+                onCancelBuild={() => setBuildMode(false)}
+                onClearDraft={handleClearDraft}
+                onPlayDraft={handlePlayDraft}
+                onActivateSequence={handleActivateSequence}
+                onReload={reloadNotes}
+              />
+            </div>
           )}
-        </div>
 
-      </div>
+          {/* Flagged shots — coach bookmarks */}
+          {flags.length > 0 && (
+            <div style={{ marginTop: 16 }}>
+              <FlaggedShotsPanel
+                flags={flags}
+                shots={shots}
+                rallies={rallies}
+                players={players}
+                onJumpToShot={handleJumpToFlaggedShot}
+                onUnflag={handleToggleFlag}
+                onReload={reloadNotes}
+              />
+            </div>
+          )}
+        </>
+      ) : (
+        <VideoUrlInput
+          pbvisionVideoId={game.pbvision_video_id}
+          onSubmit={handlePlaybackIdSave}
+        />
+      )}
 
     </div>
   );
