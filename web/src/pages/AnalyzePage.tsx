@@ -11,7 +11,6 @@ import {
 import { pbvPosterUrl } from "../lib/pbvVideo";
 import type { GameAnalysis, AnalysisNote, PlayerAssessment } from "../types/coach";
 import VideoPlayer, { type VideoPlayerHandle } from "../components/analyze/VideoPlayer";
-import Timeline from "../components/analyze/Timeline";
 import NotesPanel from "../components/analyze/NotesPanel";
 import VideoUrlInput from "../components/analyze/VideoUrlInput";
 import ShotSequence from "../components/analyze/ShotSequence";
@@ -81,6 +80,7 @@ export default function AnalyzePage() {
   const [focusedPlayerIndex, setFocusedPlayerIndex] = useState<number | null>(null);
   // Rally explicitly selected by clicking the rally strip (overrides "current time" rally)
   const [selectedRallyId, setSelectedRallyId] = useState<string | null>(null);
+  const [rallyLoop, setRallyLoop] = useState(true);
 
   const videoRef = useRef<VideoPlayerHandle>(null);
 
@@ -218,17 +218,29 @@ export default function AnalyzePage() {
   }
 
   // Loop effect: when looping a specific shot, seek back to its start when the
-  // playhead goes past its end.
+  // playhead goes past its end. Shot loop takes precedence over rally loop.
   useEffect(() => {
     if (!isLooping || !activeShotId) return;
     const active = shots.find((s) => s.id === activeShotId);
     if (!active) return;
-    // Add a small buffer (100ms) so the shot plays fully before looping
     const endBuffer = 100;
     if (currentMs > active.end_ms + endBuffer) {
       videoRef.current?.seek(active.start_ms);
     }
   }, [currentMs, isLooping, activeShotId, shots]);
+
+  // Rally loop: when a rally is explicitly selected AND rallyLoop is on AND
+  // no shot is actively looping, keep the selected rally playing on repeat.
+  useEffect(() => {
+    if (!rallyLoop || !selectedRallyId) return;
+    if (activeShotId && isLooping) return; // shot loop wins
+    const rally = rallies.find((r) => r.id === selectedRallyId);
+    if (!rally) return;
+    const endBuffer = 500; // slightly longer buffer so the last shot plays fully
+    if (currentMs > rally.end_ms + endBuffer) {
+      videoRef.current?.seek(rally.start_ms);
+    }
+  }, [currentMs, rallyLoop, selectedRallyId, activeShotId, isLooping, rallies]);
 
   // Keep isPaused in sync with player state
   useEffect(() => {
@@ -266,10 +278,6 @@ export default function AnalyzePage() {
 
   if (loading) return <p>Loading…</p>;
   if (!game) return <p>Game not found.</p>;
-
-  const duration = rallies.length > 0
-    ? rallies[rallies.length - 1].end_ms + 30000
-    : 600000;
 
   const posterUrl = pbvPosterUrl(game.pbvision_video_id, game.pbvision_bucket ?? "pbv-pro");
 
@@ -334,10 +342,16 @@ export default function AnalyzePage() {
             highlights={game.highlights ?? []}
             activeRallyId={currentRally?.id ?? null}
             currentMs={currentMs}
+            rallyLoop={rallyLoop}
+            onToggleRallyLoop={() => setRallyLoop((v) => !v)}
             onRallyClick={(r) => {
               setSelectedRallyId(r.id);
+              setActiveShotId(null); // clear shot selection so rally loop takes effect
               videoRef.current?.seek(r.start_ms);
               setCurrentMs(r.start_ms);
+              videoRef.current?.setPlaybackRate(playbackRate);
+              void videoRef.current?.play();
+              setIsPaused(false);
             }}
           />
         </div>
@@ -358,17 +372,6 @@ export default function AnalyzePage() {
                 />
                 <ShotTooltip shot={playingShot} player={playingShotPlayer} />
               </div>
-              <Timeline
-                durationMs={duration}
-                currentMs={currentMs}
-                rallies={rallies}
-                highlights={game.highlights ?? []}
-                notes={notes}
-                onSeek={(ms) => {
-                  videoRef.current?.seek(ms);
-                  setCurrentMs(ms);
-                }}
-              />
               <div style={{ fontSize: 11, color: "#999", marginTop: 8 }}>
                 Shortcuts: <kbd style={kbdStyle}>Space</kbd> play/pause ·{" "}
                 <kbd style={kbdStyle}>[</kbd> prev rally ·{" "}

@@ -24,7 +24,9 @@ interface Props {
   highlights?: HighlightEvent[];
   activeRallyId: string | null;
   currentMs: number;
+  rallyLoop: boolean;
   onRallyClick: (rally: Rally) => void;
+  onToggleRallyLoop: () => void;
 }
 
 /**
@@ -44,7 +46,9 @@ export default function RallyStrip({
   highlights = [],
   activeRallyId,
   currentMs,
+  rallyLoop,
   onRallyClick,
+  onToggleRallyLoop,
 }: Props) {
   if (rallies.length === 0) return null;
 
@@ -90,9 +94,30 @@ export default function RallyStrip({
           <Legend color="#4ade80" label="Team 1 (near)" />
           <span style={{ color: "#888" }}>🔥 firefight</span>
         </div>
-        <div style={{ fontSize: 11, color: "#888" }}>
-          {rallies.length} {rallies.length === 1 ? "rally" : "rallies"}
-          <span style={{ marginLeft: 10 }}>Click a rally to jump video</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 11, color: "#888" }}>
+          <button
+            onClick={onToggleRallyLoop}
+            title="When on, clicking a rally plays it on repeat until you select something else"
+            style={{
+              padding: "3px 9px",
+              fontSize: 11,
+              fontWeight: rallyLoop ? 700 : 400,
+              borderTop: `1px solid ${rallyLoop ? "#60a5fa" : "#444"}`,
+              borderBottom: `1px solid ${rallyLoop ? "#60a5fa" : "#444"}`,
+              borderLeft: `1px solid ${rallyLoop ? "#60a5fa" : "#444"}`,
+              borderRight: `1px solid ${rallyLoop ? "#60a5fa" : "#444"}`,
+              borderRadius: 4,
+              background: rallyLoop ? "#1e3a8a" : "transparent",
+              color: rallyLoop ? "#fff" : "#aaa",
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            🔁 {rallyLoop ? "Looping rally" : "Loop rally"}
+          </button>
+          <span>
+            {rallies.length} {rallies.length === 1 ? "rally" : "rallies"}
+          </span>
         </div>
       </div>
 
