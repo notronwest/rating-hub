@@ -10,6 +10,7 @@ interface PlayerInfo {
   player_index: number;
   display_name: string;
   team: number;
+  avatar_url?: string | null;
 }
 
 interface Props {
@@ -17,6 +18,7 @@ interface Props {
   shots: RallyShot[];
   players: PlayerInfo[];
   scoringType: string | null; // "side_out" or "rally" — affects Game Pts Lost
+  focusedPlayerIndex: number | null;
 }
 
 /**
@@ -67,9 +69,12 @@ function teamOf(playerIndex: number | null | undefined): 0 | 1 | null {
 }
 
 function categorizeRallyLoss(
-  finalShot: RallyShot | undefined,
+  rallyShots: RallyShot[],
   losingTeam: 0 | 1,
+  /** When set, only include rallies where THIS player can be held responsible. */
+  focusedPlayerIndex: number | null,
 ): ReasonId | null {
+  const finalShot = rallyShots[rallyShots.length - 1];
   if (!finalShot) return null;
   const raw = (finalShot.raw_data ?? {}) as {
     err?: {
@@ -84,11 +89,31 @@ function categorizeRallyLoss(
   const finalShotTeam = teamOf(finalShot.player_index);
   const lostByFinalShot = finalShotTeam === losingTeam;
 
-  // Popup exploited: winning-team putaway off a popup
-  if (err.pop && !lostByFinalShot) return "popup";
+  // Popup exploited: winning-team putaway off a losing-team popup. The blame
+  // goes to whoever on the losing team hit the SECOND-to-last shot (the popup).
+  if (err.pop && !lostByFinalShot) {
+    const popupShot = rallyShots[rallyShots.length - 2];
+    if (!popupShot) return null;
+    if (teamOf(popupShot.player_index) !== losingTeam) return null;
+    if (
+      focusedPlayerIndex != null &&
+      popupShot.player_index !== focusedPlayerIndex
+    ) {
+      return null;
+    }
+    return "popup";
+  }
 
-  // From here, the losing team hit the final (faulty) shot
+  // For non-popup losses, the losing team hit the final (faulty) shot
   if (!lostByFinalShot) return null;
+
+  // Player focus: attribute only to the player who hit the fault
+  if (
+    focusedPlayerIndex != null &&
+    finalShot.player_index !== focusedPlayerIndex
+  ) {
+    return null;
+  }
 
   // Shot-type-specific buckets take priority
   if (finalShot.shot_type === "serve") return "missed_serve";
@@ -110,11 +135,20 @@ function categorizeRallyLoss(
   return "forced";
 }
 
+type Counts = Record<string, { opps: number; pts: number }>;
+
+function makeEmptyCounts(): Counts {
+  const c: Counts = {};
+  for (const r of REASONS) c[r.id] = { opps: 0, pts: 0 };
+  return c;
+}
+
 export default function ReasonsForLosingRally({
   rallies,
   shots,
   players,
   scoringType,
+  focusedPlayerIndex,
 }: Props) {
   // Group shots by rally for fast lookup
   const shotsByRally = new Map<string, RallyShot[]>();
@@ -123,13 +157,15 @@ export default function ReasonsForLosingRally({
     shotsByRally.get(s.rally_id)!.push(s);
   }
 
-  // For each team, accumulate (reason -> { opportunitiesLost, gamePtsLost })
-  const team0Counts: Record<string, { opps: number; pts: number }> = {};
-  const team1Counts: Record<string, { opps: number; pts: number }> = {};
-  for (const r of REASONS) {
-    team0Counts[r.id] = { opps: 0, pts: 0 };
-    team1Counts[r.id] = { opps: 0, pts: 0 };
-  }
+  const focusedPlayer =
+    focusedPlayerIndex != null
+      ? players.find((p) => p.player_index === focusedPlayerIndex) ?? null
+      : null;
+
+  // Either one bucket per team (unfocused) or one bucket for the focused player
+  const team0Counts: Counts = makeEmptyCounts();
+  const team1Counts: Counts = makeEmptyCounts();
+  const playerCounts: Counts = makeEmptyCounts();
 
   const isSideOut = scoringType !== "rally";
 
@@ -137,26 +173,35 @@ export default function ReasonsForLosingRally({
     if (rally.winning_team == null) continue;
     const losingTeam = (1 - rally.winning_team) as 0 | 1;
 
+    // When focused, skip rallies where that player's team didn't lose
+    if (focusedPlayer && focusedPlayer.team !== losingTeam) continue;
+
     const rallyShots = (shotsByRally.get(rally.id) ?? []).sort(
       (a, b) => a.shot_index - b.shot_index,
     );
-    const finalShot = rallyShots[rallyShots.length - 1];
     const firstShot = rallyShots[0];
     const servingTeam = teamOf(firstShot?.player_index);
 
-    // Game point scored by winners: rally scoring = always; side-out = losing
-    // team was returning (so serving team scored).
     const pointScored = !isSideOut || servingTeam === rally.winning_team;
 
-    const reason = categorizeRallyLoss(finalShot, losingTeam);
+    const reason = categorizeRallyLoss(
+      rallyShots,
+      losingTeam,
+      focusedPlayerIndex,
+    );
     if (!reason) continue;
 
-    const bucket = losingTeam === 0 ? team0Counts : team1Counts;
-    bucket[reason].opps += 1;
-    if (pointScored) bucket[reason].pts += 1;
+    if (focusedPlayer) {
+      playerCounts[reason].opps += 1;
+      if (pointScored) playerCounts[reason].pts += 1;
+    } else {
+      const bucket = losingTeam === 0 ? team0Counts : team1Counts;
+      bucket[reason].opps += 1;
+      if (pointScored) bucket[reason].pts += 1;
+    }
   }
 
-  // Team labels — first player of each team
+  // Labels
   const team0Label =
     players
       .filter((p) => p.team === 0)
@@ -179,11 +224,25 @@ export default function ReasonsForLosingRally({
     >
       <h3 style={{ fontSize: 14, fontWeight: 600, margin: "0 0 12px" }}>
         Reasons for Losing Rally
+        {focusedPlayer && (
+          <span style={{ fontSize: 12, fontWeight: 400, color: "#666", marginLeft: 8 }}>
+            — focused on {focusedPlayer.display_name}
+          </span>
+        )}
       </h3>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-        <TeamTable teamLabel={team0Label} teamColor="#1a73e8" counts={team0Counts} />
-        <TeamTable teamLabel={team1Label} teamColor="#4caf50" counts={team1Counts} />
-      </div>
+      {focusedPlayer ? (
+        <TeamTable
+          teamLabel={focusedPlayer.display_name}
+          teamColor={focusedPlayer.team === 0 ? "#1a73e8" : "#4caf50"}
+          counts={playerCounts}
+          avatarUrl={focusedPlayer.avatar_url ?? null}
+        />
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+          <TeamTable teamLabel={team0Label} teamColor="#1a73e8" counts={team0Counts} />
+          <TeamTable teamLabel={team1Label} teamColor="#4caf50" counts={team1Counts} />
+        </div>
+      )}
     </div>
   );
 }
@@ -192,12 +251,13 @@ function TeamTable({
   teamLabel,
   teamColor,
   counts,
+  avatarUrl,
 }: {
   teamLabel: string;
   teamColor: string;
   counts: Record<string, { opps: number; pts: number }>;
+  avatarUrl?: string | null;
 }) {
-  // Only show rows that have at least one occurrence; keep definition order
   const visibleReasons = REASONS.filter((r) => counts[r.id]?.opps > 0);
   const totalOpps = Object.values(counts).reduce((s, v) => s + v.opps, 0);
   const totalPts = Object.values(counts).reduce((s, v) => s + v.pts, 0);
@@ -216,6 +276,19 @@ function TeamTable({
           marginBottom: 8,
         }}
       >
+        {avatarUrl && (
+          <img
+            src={avatarUrl}
+            alt=""
+            style={{
+              width: 26,
+              height: 26,
+              borderRadius: "50%",
+              objectFit: "cover",
+              flexShrink: 0,
+            }}
+          />
+        )}
         <span style={{ fontSize: 13, fontWeight: 600, color: "#333", flex: 1 }}>
           {teamLabel}
         </span>

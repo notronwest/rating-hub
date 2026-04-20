@@ -445,6 +445,7 @@ export default function AnalyzePage() {
             shots={shots}
             players={players}
             scoringType={game.scoring_type}
+            focusedPlayerIndex={focusedPlayerIndex}
           />
         </div>
       )}
