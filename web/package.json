@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:local": "BUILD_OUT_DIR=../../www/ratinghub npm run build",
     "lint": "eslint .",
     "preview": "vite preview"
   },

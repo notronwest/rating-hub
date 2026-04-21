@@ -64,6 +64,21 @@ export async function updateAnalysis(
   if (error) throw new Error(error.message);
 }
 
+/**
+ * Update the full set of dismissed loss keys on an analysis. Keys follow the
+ * `loss:<rallyId>:<attributedShotId>` shape used by the Coach Review page.
+ */
+export async function setDismissedLossKeys(
+  analysisId: string,
+  keys: string[],
+): Promise<void> {
+  const { error } = await supabase
+    .from("game_analyses")
+    .update({ dismissed_loss_keys: keys })
+    .eq("id", analysisId);
+  if (error) throw new Error(error.message);
+}
+
 /** Save a Mux playback ID on the game row. */
 export async function setGameMuxPlaybackId(
   gameId: string,
@@ -263,9 +278,13 @@ export async function createSequence(params: {
   shotIds: string[];
   label?: string | null;
   playerId?: string | null;
+  playerIds?: string[];
   whatWentWrong?: string | null;
   howToFix?: string | null;
+  fptm?: unknown;
+  drills?: string | null;
 }): Promise<AnalysisSequence> {
+  const ids = params.playerIds ?? [];
   const { data, error } = await supabase
     .from("game_analysis_sequences")
     .insert({
@@ -273,9 +292,12 @@ export async function createSequence(params: {
       rally_id: params.rallyId,
       shot_ids: params.shotIds,
       label: params.label ?? null,
-      player_id: params.playerId ?? null,
+      player_id: params.playerId ?? (ids.length === 1 ? ids[0] : null),
+      player_ids: ids,
       what_went_wrong: params.whatWentWrong ?? null,
       how_to_fix: params.howToFix ?? null,
+      fptm: params.fptm ?? null,
+      drills: params.drills ?? null,
     })
     .select("*")
     .single();
@@ -288,7 +310,7 @@ export async function updateSequence(
   patch: Partial<
     Pick<
       AnalysisSequence,
-      "shot_ids" | "label" | "player_id" | "what_went_wrong" | "how_to_fix"
+      "shot_ids" | "label" | "player_id" | "player_ids" | "what_went_wrong" | "how_to_fix" | "fptm" | "drills"
     >
   >,
 ): Promise<void> {
@@ -360,6 +382,17 @@ export async function updateFlagNote(id: string, note: string | null): Promise<v
   const { error } = await supabase
     .from("analysis_flagged_shots")
     .update({ note })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export async function updateFlagFptm(
+  id: string,
+  patch: { fptm?: unknown; drills?: string | null; note?: string | null },
+): Promise<void> {
+  const { error } = await supabase
+    .from("analysis_flagged_shots")
+    .update(patch)
     .eq("id", id);
   if (error) throw new Error(error.message);
 }

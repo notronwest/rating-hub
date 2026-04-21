@@ -941,6 +941,19 @@ async function importAugmentedInsightsJson(
 
   onProgress(`[${filename}] Updated ${playersProcessed} players with advanced stats.`);
 
+  // Extract per-shot geometry from augmented rallies into rally_shots rows.
+  // This is where contact coordinates / trajectories / player positions live.
+  const augmentedRallies: AugmentedRally[] = json.rallies ?? [];
+  if (augmentedRallies.length > 0) {
+    const shotsUpdated = await updatePerShotGeometry(
+      game.id,
+      augmentedRallies,
+      onProgress,
+      filename,
+    );
+    onProgress(`[${filename}] Updated geometry on ${shotsUpdated} shots.`);
+  }
+
   // Refresh aggregates
   for (const playerId of gpMap.values()) {
     await supabase.rpc("refresh_player_aggregates", { p_player_id: playerId });
@@ -948,6 +961,160 @@ async function importAugmentedInsightsJson(
 
   onProgress(`[${filename}] Augmented insights import complete.`);
   return { gamesCreated: 0, playersProcessed, ralliesCreated: 0, format: "augmented_insights" };
+}
+
+// -----------------------------------------------------------------------------
+// Per-shot geometry extractor
+// -----------------------------------------------------------------------------
+// Pulls contact / landing / trajectory / speed / player positions from PB
+// Vision's augmented `rallies[].shots[]` and writes them to existing
+// rally_shots rows. Matches by (rally_index, shot_index) since those are
+// stable across compact and augmented formats.
+
+interface AugmentedTrajectoryPoint {
+  ms?: number;
+  location?: { x?: number; y?: number; z?: number };
+  zone?: string;
+}
+
+interface AugmentedTrajectory {
+  confidence?: number;
+  start?: AugmentedTrajectoryPoint;
+  peak?: { x?: number; y?: number; z?: number };
+  end?: AugmentedTrajectoryPoint;
+}
+
+interface AugmentedBallMovement {
+  angles?: { yaw?: number; pitch?: number; direction?: string };
+  height_over_net?: number;
+  speed?: number;
+  distance?: number;
+  crossed_net?: boolean;
+  is_volleyed?: boolean;
+  trajectory?: AugmentedTrajectory;
+  distance_from_baseline?: number;
+}
+
+interface AugmentedShot {
+  player_id?: number;
+  resulting_ball_movement?: AugmentedBallMovement;
+  is_final?: boolean;
+  quality?: { overall?: number; execution?: number };
+  stroke_side?: string;
+  stroke_type?: string;
+  vertical_type?: string;
+  shot_type?: string;
+  is_passing?: boolean;
+  is_volley?: boolean;
+  player_positions?: Array<{ x?: number; y?: number }>;
+  advantage_scale?: number[];
+  shooter_movement_from_last_shot?: { x?: number; y?: number };
+  errors?: Record<string, unknown>;
+  start_ms?: number;
+  end_ms?: number;
+  tags?: Record<string, unknown>;
+}
+
+interface AugmentedRally {
+  start_ms?: number;
+  end_ms?: number;
+  shots?: AugmentedShot[];
+  winning_team?: number;
+}
+
+async function updatePerShotGeometry(
+  gameId: string,
+  augRallies: AugmentedRally[],
+  onProgress: ImportProgress,
+  filename: string,
+): Promise<number> {
+  // Fetch all rallies for this game with their existing shots so we can map
+  // augmented (rallyIdx, shotIdx) → rally_shots.id.
+  const { data: rallies } = await supabase
+    .from("rallies")
+    .select("id, rally_index")
+    .eq("game_id", gameId)
+    .order("rally_index");
+  if (!rallies || rallies.length === 0) return 0;
+
+  const rallyIds = rallies.map((r) => r.id);
+  const { data: shots } = await supabase
+    .from("rally_shots")
+    .select("id, rally_id, shot_index")
+    .in("rally_id", rallyIds);
+  if (!shots) return 0;
+
+  // Build lookup: (rally_index, shot_index) → rally_shot.id
+  const rallyIdxById = new Map(rallies.map((r) => [r.id, r.rally_index]));
+  const shotIdByKey = new Map<string, string>();
+  for (const s of shots) {
+    const rIdx = rallyIdxById.get(s.rally_id);
+    if (rIdx == null) continue;
+    shotIdByKey.set(`${rIdx}:${s.shot_index}`, s.id);
+  }
+
+  // Update shots in chunks to avoid huge payloads.
+  const CHUNK = 50;
+  let updated = 0;
+  for (let i = 0; i < augRallies.length; i++) {
+    const rally = augRallies[i];
+    const shots = rally.shots ?? [];
+    for (let j = 0; j < shots.length; j++) {
+      const shotId = shotIdByKey.get(`${i}:${j}`);
+      if (!shotId) continue;
+      const patch = buildShotPatch(shots[j]);
+      if (!patch) continue;
+      const { error } = await supabase
+        .from("rally_shots")
+        .update(patch)
+        .eq("id", shotId);
+      if (error) {
+        onProgress(
+          `[${filename}] Warn: shot ${i}.${j}: ${error.message}`,
+        );
+        continue;
+      }
+      updated++;
+      if (updated % CHUNK === 0) {
+        onProgress(`[${filename}] …${updated} shots updated so far`);
+      }
+    }
+  }
+  return updated;
+}
+
+function buildShotPatch(shot: AugmentedShot): Record<string, unknown> | null {
+  const rbm = shot.resulting_ball_movement;
+  const traj = rbm?.trajectory;
+  const start = traj?.start?.location;
+  const end = traj?.end?.location;
+
+  // Promote the explicit shot_type if PBV provided one (compact import
+  // derives it from tags; augmented is more authoritative).
+  const patch: Record<string, unknown> = {};
+
+  if (start?.x != null) patch.contact_x = start.x;
+  if (start?.y != null) patch.contact_y = start.y;
+  if (start?.z != null) patch.contact_z = start.z;
+  if (end?.x != null) patch.land_x = end.x;
+  if (end?.y != null) patch.land_y = end.y;
+  if (end?.z != null) patch.land_z = end.z;
+  if (rbm?.speed != null) patch.speed_mph = rbm.speed;
+  if (rbm?.height_over_net != null) patch.height_over_net = rbm.height_over_net;
+  if (rbm?.distance != null) patch.distance_ft = rbm.distance;
+  if (rbm?.distance_from_baseline != null) {
+    patch.distance_from_baseline = rbm.distance_from_baseline;
+  }
+  if (rbm?.angles?.direction) patch.ball_direction = rbm.angles.direction;
+  if (traj) patch.trajectory = traj;
+  if (shot.player_positions) patch.player_positions = shot.player_positions;
+  if (shot.advantage_scale) patch.advantage_scale = shot.advantage_scale;
+  if (shot.errors && Object.keys(shot.errors).length > 0) {
+    patch.shot_errors = shot.errors;
+  }
+  if (shot.shot_type) patch.shot_type = shot.shot_type;
+
+  return Object.keys(patch).length > 0 ? patch : null;
 }
 
 // ---------------------------------------------------------------------------

@@ -1,8 +1,10 @@
 import { useState } from "react";
 import type { RallyShot } from "../../types/database";
 import type { FlaggedShot } from "../../types/coach";
-import { updateFlagNote } from "../../lib/coachApi";
+import { updateFlagFptm } from "../../lib/coachApi";
 import { formatMs } from "../../lib/pbvVideo";
+import FptmEditor from "./FptmEditor";
+import { summarizeFptm, type FptmValue } from "../../lib/fptm";
 
 interface PlayerInfo {
   player_index: number;
@@ -140,15 +142,21 @@ function FlagRow({
   onReload: () => void;
 }) {
   const [editing, setEditing] = useState(false);
-  const [noteDraft, setNoteDraft] = useState(flag.note ?? "");
+  const [fptmDraft, setFptmDraft] = useState<FptmValue>(flag.fptm ?? {});
+  const [drillsDraft, setDrillsDraft] = useState<string | null>(flag.drills ?? null);
   const [saving, setSaving] = useState(false);
 
   const color = SHOT_COLORS[shot.shot_type ?? "shot"] ?? "#757575";
+  const fptmSummary = summarizeFptm(flag.fptm);
+  const hasDiagnosis = fptmSummary.length > 0 || !!flag.drills;
 
-  async function saveNote() {
+  async function saveDiagnosis() {
     setSaving(true);
     try {
-      await updateFlagNote(flag.id, noteDraft.trim() || null);
+      await updateFlagFptm(flag.id, {
+        fptm: fptmDraft,
+        drills: drillsDraft ?? null,
+      });
       setEditing(false);
       onReload();
     } catch (e) {
@@ -161,14 +169,12 @@ function FlagRow({
   return (
     <div
       style={{
-        display: "flex",
-        alignItems: "flex-start",
-        gap: 10,
         padding: "8px 14px",
         borderBottom: "1px solid #f0f0f0",
         fontSize: 13,
       }}
     >
+     <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
       <button
         onClick={onJump}
         style={{
@@ -216,82 +222,50 @@ function FlagRow({
           <span style={{ color: "#888" }}> · shot {shot.shot_index + 1}</span>
         </div>
 
-        {editing ? (
-          <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
-            <input
-              type="text"
-              value={noteDraft}
-              onChange={(e) => setNoteDraft(e.target.value)}
-              placeholder="Add a quick note…"
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === "Enter") saveNote();
-                if (e.key === "Escape") setEditing(false);
-              }}
-              style={{
-                flex: 1,
-                padding: "4px 8px",
-                fontSize: 12,
-                borderTop: "1px solid #ddd",
-                borderBottom: "1px solid #ddd",
-                borderLeft: "1px solid #ddd",
-                borderRight: "1px solid #ddd",
-                borderRadius: 4,
-                outline: "none",
-                fontFamily: "inherit",
-              }}
-            />
+        {!editing && (
+          <div style={{ marginTop: 4, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            {fptmSummary.map(({ pillar, itemCount }) => (
+              <span
+                key={pillar.id}
+                title={pillar.label}
+                style={{
+                  padding: "1px 6px",
+                  fontSize: 10,
+                  fontWeight: 700,
+                  background: `${pillar.color}18`,
+                  color: pillar.color,
+                  borderRadius: 3,
+                }}
+              >
+                {pillar.letter}
+                {itemCount > 0 ? ` ${itemCount}` : ""}
+              </span>
+            ))}
+            {!hasDiagnosis && (
+              <span style={{ fontSize: 11, color: "#bbb", fontStyle: "italic" }}>
+                No diagnosis yet
+              </span>
+            )}
             <button
-              onClick={saveNote}
-              disabled={saving}
+              onClick={() => {
+                setFptmDraft(flag.fptm ?? {});
+                setDrillsDraft(flag.drills ?? null);
+                setEditing(true);
+              }}
               style={{
-                padding: "3px 10px",
-                fontSize: 11,
+                padding: "2px 8px",
+                fontSize: 10,
                 fontWeight: 600,
-                background: "#1a73e8",
-                color: "#fff",
-                borderTop: "1px solid #1a73e8",
-                borderBottom: "1px solid #1a73e8",
-                borderLeft: "1px solid #1a73e8",
-                borderRight: "1px solid #1a73e8",
-                borderRadius: 4,
-                cursor: "pointer",
-                fontFamily: "inherit",
-              }}
-            >
-              {saving ? "…" : "Save"}
-            </button>
-            <button
-              onClick={() => setEditing(false)}
-              style={{
-                padding: "3px 8px",
-                fontSize: 11,
                 background: "#fff",
-                color: "#666",
-                borderTop: "1px solid #ddd",
-                borderBottom: "1px solid #ddd",
-                borderLeft: "1px solid #ddd",
-                borderRight: "1px solid #ddd",
-                borderRadius: 4,
+                color: "#1a73e8",
+                border: "1px solid #c6dafc",
+                borderRadius: 3,
                 cursor: "pointer",
                 fontFamily: "inherit",
               }}
             >
-              Cancel
+              {hasDiagnosis ? "Edit diagnosis" : "Diagnose (FPTM)"}
             </button>
-          </div>
-        ) : (
-          <div
-            onClick={() => setEditing(true)}
-            style={{
-              fontSize: 12,
-              color: flag.note ? "#555" : "#bbb",
-              marginTop: 3,
-              cursor: "pointer",
-              fontStyle: flag.note ? "normal" : "italic",
-            }}
-          >
-            {flag.note ?? "Add a note…"}
           </div>
         )}
       </div>
@@ -315,6 +289,55 @@ function FlagRow({
       >
         ✕
       </button>
+      </div>
+
+      {editing && (
+        <div style={{ marginTop: 10, padding: "10px 12px", background: "#fafbff", border: "1px solid #e2e2e2", borderRadius: 6 }}>
+          <FptmEditor
+            fptm={fptmDraft}
+            drills={drillsDraft}
+            onChange={({ fptm, drills }) => {
+              setFptmDraft(fptm);
+              setDrillsDraft(drills);
+            }}
+          />
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
+            <button
+              onClick={() => setEditing(false)}
+              style={{
+                padding: "4px 12px",
+                fontSize: 12,
+                background: "#fff",
+                color: "#666",
+                border: "1px solid #ddd",
+                borderRadius: 5,
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={saveDiagnosis}
+              disabled={saving}
+              style={{
+                padding: "4px 14px",
+                fontSize: 12,
+                fontWeight: 600,
+                background: "#1a73e8",
+                color: "#fff",
+                border: "1px solid #1a73e8",
+                borderRadius: 5,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                opacity: saving ? 0.6 : 1,
+              }}
+            >
+              {saving ? "Saving…" : "Save diagnosis"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

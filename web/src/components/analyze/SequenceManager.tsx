@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { RallyShot } from "../../types/database";
 import type { AnalysisSequence } from "../../types/coach";
 import {
@@ -7,6 +7,8 @@ import {
   deleteSequence,
 } from "../../lib/coachApi";
 import { formatMs } from "../../lib/pbvVideo";
+import FptmEditor from "./FptmEditor";
+import { summarizeFptm, type FptmValue } from "../../lib/fptm";
 
 interface PlayerInfo {
   id: string;
@@ -46,28 +48,47 @@ export default function SequenceManager({
   activeSequenceId,
   buildMode,
   draftShotIds,
-  focusedPlayerIndex,
+  focusedPlayerIndex: _focusedPlayerIndex,
   onCancelBuild,
   onClearDraft,
-  onPlayDraft,
+  onPlayDraft: _onPlayDraft,
   onActivateSequence,
   onReload,
 }: Props) {
-  const [formOpen, setFormOpen] = useState(false);
   const [label, setLabel] = useState("");
-  const [playerId, setPlayerId] = useState<string>("");
-  const [whatWentWrong, setWhatWentWrong] = useState("");
-  const [howToFix, setHowToFix] = useState("");
+  // Default to ALL players selected whenever build mode enters (see effect below)
+  const [selectedPlayerIds, setSelectedPlayerIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [fptm, setFptm] = useState<FptmValue>({});
+  const [drills, setDrills] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Entering build mode resets the form with all players pre-selected so the
+  // coach just needs to pick shots and hit Save.
+  useEffect(() => {
+    if (buildMode) {
+      setSelectedPlayerIds(new Set(players.map((p) => p.id)));
+    }
+  }, [buildMode, players]);
+
+  function togglePlayer(id: string) {
+    setSelectedPlayerIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   async function handleSave() {
     if (!rally || draftShotIds.size === 0) {
       setError("Select at least one shot.");
       return;
     }
-    if (!whatWentWrong.trim() && !howToFix.trim()) {
-      setError("Please add notes in at least one field.");
+    if (selectedPlayerIds.size === 0) {
+      setError("Select at least one player.");
       return;
     }
 
@@ -79,26 +100,24 @@ export default function SequenceManager({
         .sort((a, b) => a.shot_index - b.shot_index)
         .map((s) => s.id);
 
-      const focusedPlayer = focusedPlayerIndex != null
-        ? players.find((p) => p.player_index === focusedPlayerIndex) ?? null
-        : null;
+      const ids = Array.from(selectedPlayerIds);
 
       await createSequence({
         analysisId,
         rallyId: rally.id,
         shotIds: orderedShotIds,
         label: label.trim() || null,
-        playerId: playerId || focusedPlayer?.id || null,
-        whatWentWrong: whatWentWrong.trim() || null,
-        howToFix: howToFix.trim() || null,
+        playerIds: ids,
+        playerId: ids.length === 1 ? ids[0] : null,
+        fptm: Object.keys(fptm).length > 0 ? fptm : null,
+        drills: drills ?? null,
       });
 
       // Reset form
       setLabel("");
-      setPlayerId("");
-      setWhatWentWrong("");
-      setHowToFix("");
-      setFormOpen(false);
+      setSelectedPlayerIds(new Set());
+      setFptm({});
+      setDrills(null);
       onClearDraft();
       onCancelBuild();
       onReload();
@@ -136,40 +155,21 @@ export default function SequenceManager({
             borderRadius: 8,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: formOpen ? 10 : 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
             <span style={{ fontSize: 12, fontWeight: 600, color: "#7a5d00" }}>
               📋 Building sequence
             </span>
             <span style={{ fontSize: 12, color: "#7a5d00" }}>
               {draftShotIds.size} shot{draftShotIds.size !== 1 ? "s" : ""} selected
             </span>
+            <span style={{ fontSize: 11, color: "#7a5d00", fontStyle: "italic" }}>
+              Auto-looping
+            </span>
             <span style={{ flex: 1 }} />
-            <button
-              onClick={onPlayDraft}
-              disabled={draftShotIds.size === 0}
-              style={btn(false, draftShotIds.size === 0)}
-            >
-              ▶ Play on loop
-            </button>
-            <button
-              onClick={() => {
-                if (draftShotIds.size === 0) {
-                  setError("Select at least one shot first.");
-                  return;
-                }
-                setFormOpen(true);
-                setError(null);
-              }}
-              disabled={draftShotIds.size === 0}
-              style={btn(true, draftShotIds.size === 0)}
-            >
-              💾 Save with notes
-            </button>
             <button
               onClick={() => {
                 onClearDraft();
                 onCancelBuild();
-                setFormOpen(false);
                 setError(null);
               }}
               style={{ ...btn(false, false), background: "transparent", color: "#7a5d00" }}
@@ -178,8 +178,9 @@ export default function SequenceManager({
             </button>
           </div>
 
-          {formOpen && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {/* Edit panel is always open while building — coach picks shots on
+              the right, fills in diagnosis/players here, hits Save. */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <input
                 type="text"
                 placeholder="Optional label (e.g. 'Third-shot drop went too deep')"
@@ -187,56 +188,112 @@ export default function SequenceManager({
                 onChange={(e) => setLabel(e.target.value)}
                 style={inputStyle}
               />
-              <select
-                value={playerId}
-                onChange={(e) => setPlayerId(e.target.value)}
-                style={{ ...inputStyle, padding: "6px 8px" }}
-              >
-                <option value="">Focus player (optional)</option>
-                {players.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.display_name} (T{p.team})
-                  </option>
-                ))}
-              </select>
               <div>
-                <label style={labelStyle}>What went wrong</label>
-                <textarea
-                  value={whatWentWrong}
-                  onChange={(e) => setWhatWentWrong(e.target.value)}
-                  rows={3}
-                  placeholder="Describe the error or missed opportunity…"
-                  style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }}
-                />
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    marginBottom: 6,
+                  }}
+                >
+                  <label style={{ ...labelStyle, margin: 0 }}>
+                    Players in this sequence
+                  </label>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSelectedPlayerIds(new Set(players.map((p) => p.id)))
+                      }
+                      style={tinyBtn}
+                    >
+                      All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPlayerIds(new Set())}
+                      style={tinyBtn}
+                    >
+                      None
+                    </button>
+                  </div>
+                </div>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+                    gap: 6,
+                  }}
+                >
+                  {players.map((p) => {
+                    const checked = selectedPlayerIds.has(p.id);
+                    const teamColor = p.team === 0 ? "#1a73e8" : "#f59e0b";
+                    return (
+                      <label
+                        key={p.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "6px 10px",
+                          border: `1px solid ${checked ? teamColor : "#ddd"}`,
+                          background: checked ? `${teamColor}14` : "#fff",
+                          borderRadius: 6,
+                          cursor: "pointer",
+                          fontSize: 12,
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => togglePlayer(p.id)}
+                          style={{ accentColor: teamColor }}
+                        />
+                        <span
+                          style={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: "50%",
+                            background: teamColor,
+                          }}
+                        />
+                        <span
+                          style={{
+                            fontWeight: 600,
+                            color: "#333",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {p.display_name}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
-              <div>
-                <label style={labelStyle}>How to fix it</label>
-                <textarea
-                  value={howToFix}
-                  onChange={(e) => setHowToFix(e.target.value)}
-                  rows={3}
-                  placeholder="Coaching correction, drill suggestion, reminder cue…"
-                  style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }}
-                />
-              </div>
+              {/* FPTM coaching framework */}
+              <FptmEditor
+                fptm={fptm}
+                drills={drills}
+                onChange={({ fptm: f, drills: d }) => {
+                  setFptm(f);
+                  setDrills(d);
+                }}
+              />
               {error && <div style={{ color: "crimson", fontSize: 12 }}>{error}</div>}
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                 <button
-                  onClick={() => setFormOpen(false)}
-                  style={{ ...btn(false, false), background: "transparent" }}
-                >
-                  Close form
-                </button>
-                <button
                   onClick={handleSave}
-                  disabled={saving}
-                  style={btn(true, saving)}
+                  disabled={saving || draftShotIds.size === 0}
+                  style={btn(true, saving || draftShotIds.size === 0)}
                 >
-                  {saving ? "Saving…" : "Save sequence"}
+                  {saving ? "Saving…" : "Save"}
                 </button>
               </div>
             </div>
-          )}
         </div>
       )}
 
@@ -301,8 +358,8 @@ function SavedSequenceRow({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [whatWrong, setWhatWrong] = useState(seq.what_went_wrong ?? "");
-  const [howFix, setHowFix] = useState(seq.how_to_fix ?? "");
+  const [fptmDraft, setFptmDraft] = useState<FptmValue>(seq.fptm ?? {});
+  const [drillsDraft, setDrillsDraft] = useState<string | null>(seq.drills ?? null);
 
   const seqShots = seq.shot_ids
     .map((id) => shots.find((s) => s.id === id))
@@ -312,12 +369,13 @@ function SavedSequenceRow({
   const player = seq.player_id
     ? players.find((p) => p.id === seq.player_id) ?? null
     : null;
+  const fptmSummary = summarizeFptm(seq.fptm);
 
   async function handleSaveEdit() {
     try {
       await updateSequence(seq.id, {
-        what_went_wrong: whatWrong.trim() || null,
-        how_to_fix: howFix.trim() || null,
+        fptm: fptmDraft,
+        drills: drillsDraft ?? null,
       });
       setEditing(false);
       onReload();
@@ -367,16 +425,30 @@ function SavedSequenceRow({
               </span>
             )}
           </div>
-          <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>
-            {seqShots.length} shot{seqShots.length !== 1 ? "s" : ""}
-            {firstShot && lastShot && (
-              <span> · {formatMs(firstShot.start_ms)}–{formatMs(lastShot.end_ms)}</span>
-            )}
-            {seq.what_went_wrong && !expanded && (
-              <span style={{ marginLeft: 8, color: "#999" }}>
-                · {seq.what_went_wrong.slice(0, 60)}{seq.what_went_wrong.length > 60 ? "…" : ""}
+          <div style={{ fontSize: 11, color: "#888", marginTop: 2, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            <span>
+              {seqShots.length} shot{seqShots.length !== 1 ? "s" : ""}
+              {firstShot && lastShot && (
+                <span> · {formatMs(firstShot.start_ms)}–{formatMs(lastShot.end_ms)}</span>
+              )}
+            </span>
+            {fptmSummary.map(({ pillar, itemCount }) => (
+              <span
+                key={pillar.id}
+                title={pillar.label}
+                style={{
+                  padding: "1px 6px",
+                  fontSize: 10,
+                  fontWeight: 700,
+                  background: `${pillar.color}18`,
+                  color: pillar.color,
+                  borderRadius: 3,
+                }}
+              >
+                {pillar.letter}
+                {itemCount > 0 ? ` ${itemCount}` : ""}
               </span>
-            )}
+            ))}
           </div>
         </div>
         <span style={{ fontSize: 10, color: "#bbb" }}>{expanded ? "▲" : "▼"}</span>
@@ -386,51 +458,44 @@ function SavedSequenceRow({
         <div style={{ padding: "10px 14px 14px", fontSize: 13, background: "#fafafa" }}>
           {editing ? (
             <>
-              <label style={labelStyle}>What went wrong</label>
-              <textarea
-                value={whatWrong}
-                onChange={(e) => setWhatWrong(e.target.value)}
-                rows={3}
-                style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit", marginBottom: 8 }}
+              <FptmEditor
+                fptm={fptmDraft}
+                drills={drillsDraft}
+                onChange={({ fptm, drills }) => {
+                  setFptmDraft(fptm);
+                  setDrillsDraft(drills);
+                }}
               />
-              <label style={labelStyle}>How to fix it</label>
-              <textarea
-                value={howFix}
-                onChange={(e) => setHowFix(e.target.value)}
-                rows={3}
-                style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit", marginBottom: 8 }}
-              />
-              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                <button onClick={() => setEditing(false)} style={{ ...btn(false, false), background: "#fff" }}>
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditing(false);
+                  }}
+                  style={{ ...btn(false, false), background: "#fff" }}
+                >
                   Cancel
                 </button>
-                <button onClick={handleSaveEdit} style={btn(true, false)}>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSaveEdit();
+                  }}
+                  style={btn(true, false)}
+                >
                   Save
                 </button>
               </div>
             </>
           ) : (
             <>
-              {seq.what_went_wrong && (
-                <div style={{ marginBottom: 6 }}>
-                  <div style={{ fontSize: 11, color: "#c62828", fontWeight: 600, marginBottom: 2 }}>
-                    What went wrong
-                  </div>
-                  <div style={{ color: "#333", whiteSpace: "pre-wrap" }}>{seq.what_went_wrong}</div>
-                </div>
-              )}
-              {seq.how_to_fix && (
-                <div style={{ marginBottom: 6 }}>
-                  <div style={{ fontSize: 11, color: "#1e7e34", fontWeight: 600, marginBottom: 2 }}>
-                    How to fix it
-                  </div>
-                  <div style={{ color: "#333", whiteSpace: "pre-wrap" }}>{seq.how_to_fix}</div>
-                </div>
-              )}
-              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 6 }}>
+              <FptmReadOnly fptm={seq.fptm} drills={seq.drills} />
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
+                    setFptmDraft(seq.fptm ?? {});
+                    setDrillsDraft(seq.drills ?? null);
                     setEditing(true);
                   }}
                   style={{ ...btn(false, false), background: "#fff" }}
@@ -469,6 +534,20 @@ const inputStyle: React.CSSProperties = {
   boxSizing: "border-box",
 };
 
+const tinyBtn: React.CSSProperties = {
+  padding: "2px 8px",
+  fontSize: 10,
+  fontWeight: 600,
+  border: "1px solid #ddd",
+  borderRadius: 4,
+  background: "#fff",
+  color: "#555",
+  cursor: "pointer",
+  fontFamily: "inherit",
+  textTransform: "uppercase",
+  letterSpacing: 0.4,
+};
+
 const labelStyle: React.CSSProperties = {
   display: "block",
   fontSize: 11,
@@ -496,6 +575,87 @@ function btn(primary: boolean, disabled: boolean): React.CSSProperties {
     fontFamily: "inherit",
     opacity: disabled ? 0.6 : 1,
   };
+}
+
+/**
+ * Read-only FPTM display for saved sequence rows. Shows each populated pillar
+ * with its selected sub-items and any per-pillar notes, plus drills.
+ */
+function FptmReadOnly({
+  fptm,
+  drills,
+}: {
+  fptm: FptmValue | null;
+  drills: string | null;
+}) {
+  const summary = summarizeFptm(fptm);
+  if (summary.length === 0 && !drills) {
+    return (
+      <div style={{ fontSize: 12, color: "#999", fontStyle: "italic" }}>
+        No diagnosis yet. Click Edit to add one.
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {summary.map(({ pillar }) => {
+        const state = fptm?.[pillar.id];
+        if (!state) return null;
+        const labels = state.items
+          .map((id) => pillar.items.find((it) => it.id === id)?.label)
+          .filter((l): l is string => !!l);
+        return (
+          <div
+            key={pillar.id}
+            style={{
+              borderLeft: `3px solid ${pillar.color}`,
+              background: `${pillar.color}10`,
+              padding: "6px 10px",
+              borderRadius: 4,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 700,
+                color: pillar.color,
+                marginBottom: 2,
+              }}
+            >
+              {pillar.letter} — {pillar.label}
+            </div>
+            {labels.length > 0 && (
+              <ul style={{ margin: "2px 0 0 18px", padding: 0, fontSize: 12, color: "#333" }}>
+                {labels.map((l) => (
+                  <li key={l}>{l}</li>
+                ))}
+              </ul>
+            )}
+            {state.note && (
+              <div style={{ fontSize: 12, color: "#555", marginTop: 4, whiteSpace: "pre-wrap" }}>
+                {state.note}
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {drills && (
+        <div
+          style={{
+            borderLeft: "3px solid #1e7e34",
+            background: "#e6f4ea",
+            padding: "6px 10px",
+            borderRadius: 4,
+          }}
+        >
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#1e7e34", marginBottom: 2 }}>
+            Drills
+          </div>
+          <div style={{ fontSize: 12, color: "#333", whiteSpace: "pre-wrap" }}>{drills}</div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function playBtn(active: boolean): React.CSSProperties {

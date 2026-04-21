@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { RallyShot } from "../../types/database";
 import { formatMs } from "../../lib/pbvVideo";
 
@@ -41,6 +42,11 @@ interface Props {
   // Flags
   flaggedShotIds: Set<string>;
   onToggleFlag: (shotId: string) => void;
+  /** Ids of shots that belong to any saved sequence on this rally — used for
+   *  highlight-only styling (not interactive here). */
+  savedSequenceShotIds?: Set<string>;
+  /** Ids of shots that ended the rally on a fault (PB Vision `err` in raw_data). */
+  faultShotIds?: Set<string>;
 }
 
 /** Colors for shot type badges. */
@@ -82,7 +88,10 @@ export default function ShotSequence({
   onToggleDraftShot,
   flaggedShotIds,
   onToggleFlag,
+  savedSequenceShotIds,
+  faultShotIds,
 }: Props) {
+  const [expanded, setExpanded] = useState(false);
   const activeShot = activeShotId ? shots.find((s) => s.id === activeShotId) : null;
   const activePlayer = activeShot
     ? players.find((p) => p.player_index === activeShot.player_index)
@@ -157,8 +166,28 @@ export default function ShotSequence({
             </div>
           )}
           <button
+            onClick={() => setExpanded((v) => !v)}
+            title={expanded ? "Collapse shot list" : "Expand shot list"}
+            style={{
+              padding: "4px 10px",
+              fontSize: 11,
+              fontWeight: 500,
+              borderTop: "1px solid #ddd",
+              borderBottom: "1px solid #ddd",
+              borderLeft: "1px solid #ddd",
+              borderRight: "1px solid #ddd",
+              borderRadius: 5,
+              background: "#fff",
+              color: "#555",
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            {expanded ? "▲ Collapse" : "▼ Expand"}
+          </button>
+          <button
             onClick={onToggleBuildMode}
-            title="Select shots to build a sequence with teaching notes"
+            title="Select shots to build a sequence"
             style={{
               padding: "4px 10px",
               fontSize: 11,
@@ -251,14 +280,36 @@ export default function ShotSequence({
           No shot data imported for this rally yet. Re-import the compact JSON to populate shots.
         </div>
       ) : (
-        <div style={{ maxHeight: 340, overflowY: "auto" }}>
+        <div
+          key={expanded ? "expanded" : "collapsed"}
+          style={{
+            height: expanded ? 680 : 340,
+            minHeight: 200,
+            maxHeight: "85vh",
+            overflowY: "auto",
+            resize: "vertical",
+          }}
+        >
           {shots.map((shot) => {
             const player = players.find((p) => p.player_index === shot.player_index);
             const isPlaying = currentMs >= shot.start_ms && currentMs <= shot.end_ms;
             const isActive = shot.id === activeShotId;
+            const inSavedSequence = savedSequenceShotIds?.has(shot.id) ?? false;
+            const isFault = faultShotIds?.has(shot.id) ?? false;
             const color = SHOT_COLORS[shot.shot_type ?? "shot"] ?? SHOT_COLORS.shot;
 
-            const bgColor = isActive ? "#f0f4ff" : isPlaying ? "#e8f0fe" : "#fff";
+            // Highlight hierarchy: active > playing > fault (red) > saved
+            // sequence (yellow) > none. Fault wins over saved sequence because
+            // it's a fact about the rally, not coach-attached metadata.
+            const bgColor = isActive
+              ? "#f0f4ff"
+              : isPlaying
+              ? "#e8f0fe"
+              : isFault && !buildMode
+              ? "#ffeaea"
+              : inSavedSequence && !buildMode
+              ? "#fff9e0"
+              : "#fff";
 
             return (
               <div
@@ -290,6 +341,10 @@ export default function ShotSequence({
                     ? `3px solid #1a73e8`
                     : isPlaying
                     ? `3px solid #4caf50`
+                    : isFault && !buildMode
+                    ? "3px solid #ef4444"
+                    : inSavedSequence && !buildMode
+                    ? "3px solid #f0d169"
                     : `3px solid transparent`,
                   borderRight: "none",
                   cursor: "pointer",

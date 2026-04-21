@@ -1,4 +1,5 @@
 import type { RallyShot } from "../../types/database";
+import type { AnalysisSequence, FlaggedShot } from "../../types/coach";
 
 interface Rally {
   id: string;
@@ -22,6 +23,8 @@ interface Props {
   rallies: Rally[];
   shots: RallyShot[];
   highlights?: HighlightEvent[];
+  sequences?: AnalysisSequence[];
+  flags?: FlaggedShot[];
   activeRallyId: string | null;
   currentMs: number;
   rallyLoop: boolean;
@@ -44,6 +47,8 @@ export default function RallyStrip({
   rallies,
   shots,
   highlights = [],
+  sequences = [],
+  flags = [],
   activeRallyId,
   currentMs,
   rallyLoop,
@@ -68,6 +73,23 @@ export default function RallyStrip({
     highlights.filter((h) => h.kind === "firefight").map((h) => h.rally_idx),
   );
 
+  // Coach-work counts per rally — saved sequences are direct; flagged shots
+  // require a shot→rally hop.
+  const sequenceCountByRally = new Map<string, number>();
+  for (const seq of sequences) {
+    sequenceCountByRally.set(
+      seq.rally_id,
+      (sequenceCountByRally.get(seq.rally_id) ?? 0) + 1,
+    );
+  }
+  const rallyIdByShotId = new Map(shots.map((s) => [s.id, s.rally_id]));
+  const flagCountByRally = new Map<string, number>();
+  for (const f of flags) {
+    const rallyId = rallyIdByShotId.get(f.shot_id);
+    if (!rallyId) continue;
+    flagCountByRally.set(rallyId, (flagCountByRally.get(rallyId) ?? 0) + 1);
+  }
+
   // Max shot count across rallies for bar normalization
   const maxShots = Math.max(
     1,
@@ -89,10 +111,15 @@ export default function RallyStrip({
       }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-        <div style={{ display: "flex", gap: 14, fontSize: 11, color: "#666" }}>
+        <div style={{ display: "flex", gap: 14, fontSize: 11, color: "#666", flexWrap: "wrap" }}>
           <Legend color="#1a73e8" label="Team 0 (far)" />
           <Legend color="#4caf50" label="Team 1 (near)" />
           <span style={{ color: "#888" }}>🔥 firefight</span>
+          <span style={{ color: "#888" }}>
+            <span style={{ color: "#1a73e8", fontWeight: 700 }}>▤</span> sequence ·{" "}
+            <span style={{ color: "#d97706", fontWeight: 700 }}>⚑</span> flag ·{" "}
+            <span style={{ color: "#ef4444", fontWeight: 700 }}>●</span> ended on fault
+          </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 11, color: "#666" }}>
           <button
@@ -145,6 +172,9 @@ export default function RallyStrip({
           const lastRaw = (lastShot?.raw_data ?? {}) as Record<string, unknown>;
           const hasFault = !!lastRaw.err;
 
+          const seqCount = sequenceCountByRally.get(r.id) ?? 0;
+          const flagCount = flagCountByRally.get(r.id) ?? 0;
+
           const score = r.score_team0 != null && r.score_team1 != null
             ? `${r.score_team0}-${r.score_team1}`
             : null;
@@ -153,15 +183,23 @@ export default function RallyStrip({
             <button
               key={r.id}
               onClick={() => onRallyClick(r)}
-              title={`Rally ${r.rally_index + 1}${score ? ` · ${score}` : ""} · ${rallyShots.length} shots`}
+              title={[
+                `Rally ${r.rally_index + 1}`,
+                score,
+                `${rallyShots.length} shots`,
+                seqCount > 0 ? `${seqCount} sequence${seqCount !== 1 ? "s" : ""}` : null,
+                flagCount > 0 ? `${flagCount} flag${flagCount !== 1 ? "s" : ""}` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
               style={{
-                flex: "0 0 52px",
+                flex: "0 0 60px",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
                 gap: 3,
                 padding: "6px 0",
-                minHeight: 120,
+                minHeight: 144,
                 borderTop: `1px solid ${isActive ? "#1a73e8" : "#eee"}`,
                 borderBottom: `1px solid ${isActive ? "#1a73e8" : "#eee"}`,
                 borderLeft: `1px solid ${isActive ? "#1a73e8" : isPlaying ? "#4caf50" : "transparent"}`,
@@ -216,10 +254,42 @@ export default function RallyStrip({
                 <TeamBar count={team1Count} max={maxShots} color="#4caf50" />
               </div>
 
-              {/* Fault indicator */}
-              <span style={{ fontSize: 10, height: 12, color: "#ef4444" }}>
-                {hasFault ? "●" : ""}
-              </span>
+              {/* Coach-work row: sequence + flag icons under a divider.
+                  Faded when zero so every card has the same footprint. */}
+              <div
+                style={{
+                  marginTop: 2,
+                  paddingTop: 3,
+                  width: "90%",
+                  borderTop: "1px solid #eee",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 4,
+                  height: 16,
+                  fontSize: 10,
+                  lineHeight: 1,
+                }}
+              >
+                <CoachWorkIcon
+                  icon="▤"
+                  count={seqCount}
+                  activeColor="#1a73e8"
+                  label="sequence"
+                />
+                <CoachWorkIcon
+                  icon="⚑"
+                  count={flagCount}
+                  activeColor="#d97706"
+                  label="flag"
+                />
+                <CoachWorkIcon
+                  icon="●"
+                  count={hasFault ? 1 : 0}
+                  activeColor="#ef4444"
+                  label="fault"
+                />
+              </div>
             </button>
           );
         })}
@@ -230,32 +300,72 @@ export default function RallyStrip({
 
 function TeamBar({ count, max, color }: { count: number; max: number; color: string }) {
   const pct = Math.max(4, (count / max) * 100);
+  // Bar height alone communicates relative magnitude; count labels were
+  // overflowing into the rows below and cluttering the card.
   return (
     <div
+      title={`${count} shot${count === 1 ? "" : "s"}`}
       style={{
         width: 10,
         height: `${pct}%`,
         background: color,
         borderRadius: 2,
-        position: "relative",
-        display: "flex",
-        alignItems: "flex-end",
-        justifyContent: "center",
+      }}
+    />
+  );
+}
+
+/**
+ * Displays a glyph for a category of coach work on a rally. Filled state is a
+ * solid colored badge with count; empty state is a tiny dashed outline
+ * placeholder so the row keeps its footprint without visually competing.
+ */
+function CoachWorkIcon({
+  icon,
+  count,
+  activeColor,
+  label,
+}: {
+  icon: string;
+  count: number;
+  activeColor: string;
+  label: string;
+}) {
+  if (count === 0) {
+    return (
+      <span
+        aria-label={`no ${label}s`}
+        title={`No ${label}s on this rally`}
+        style={{
+          display: "inline-block",
+          width: 14,
+          height: 10,
+          border: "1px dashed #ccc",
+          borderRadius: 2,
+          opacity: 0.6,
+        }}
+      />
+    );
+  }
+  return (
+    <span
+      title={`${count} ${label}${count !== 1 ? "s" : ""} on this rally`}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 2,
+        padding: "1px 4px",
+        fontSize: 11,
+        fontWeight: 800,
+        color: "#fff",
+        background: activeColor,
+        borderRadius: 3,
+        lineHeight: 1,
       }}
     >
-      {count > 0 && (
-        <span
-          style={{
-            position: "absolute",
-            bottom: -14,
-            fontSize: 9,
-            color: "#888",
-          }}
-        >
-          {count}
-        </span>
-      )}
-    </div>
+      <span style={{ fontSize: 12 }}>{icon}</span>
+      {count > 1 && <span style={{ fontSize: 9 }}>{count}</span>}
+    </span>
   );
 }
 

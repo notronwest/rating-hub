@@ -1,4 +1,5 @@
 // Types matching db/migrations/007_coach_analysis.sql
+import type { FptmValue } from "../lib/fptm";
 
 export interface GameAnalysis {
   id: string;
@@ -8,6 +9,7 @@ export interface GameAnalysis {
   video_url: string | null;
   overall_notes: string | null;
   is_public: boolean;
+  dismissed_loss_keys: string[];
   created_at: string;
   updated_at: string;
 }
@@ -65,8 +67,11 @@ export interface AnalysisSequence {
   shot_ids: string[];
   label: string | null;
   player_id: string | null;
+  player_ids: string[];
   what_went_wrong: string | null;
   how_to_fix: string | null;
+  fptm: FptmValue | null;
+  drills: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -76,5 +81,7 @@ export interface FlaggedShot {
   analysis_id: string;
   shot_id: string;
   note: string | null;
+  fptm: FptmValue | null;
+  drills: string | null;
   created_at: string;
 }

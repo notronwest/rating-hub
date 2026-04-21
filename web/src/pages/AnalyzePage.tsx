@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { supabase } from "../supabase";
 import { useAuth } from "../auth/AuthProvider";
 import {
@@ -21,7 +21,10 @@ import PlayerFocusBar from "../components/analyze/PlayerFocusBar";
 import ShotTooltip from "../components/analyze/ShotTooltip";
 import SequenceManager from "../components/analyze/SequenceManager";
 import FlaggedShotsPanel from "../components/analyze/FlaggedShotsPanel";
-import type { RallyShot } from "../types/database";
+import PlayerHeaderBar from "../components/analyze/PlayerHeaderBar";
+import GameWorkspaceHeader from "../components/analyze/GameWorkspaceHeader";
+import TeamStatsBlock from "../components/game/TeamStatsBlock";
+import type { RallyShot, GamePlayer, GamePlayerShotType } from "../types/database";
 
 interface GameRow {
   id: string;
@@ -36,6 +39,8 @@ interface GameRow {
   mux_playback_id: string | null;
   scoring_type: string | null;
   highlights: Array<{ rally_idx: number; s: number; e: number; kind: string; short_description: string }> | null;
+  team0_kitchen_pct: number | null;
+  team1_kitchen_pct: number | null;
 }
 
 interface GamePlayerRow {
@@ -53,10 +58,12 @@ interface RallyRow {
   winning_team: number | null;
   score_team0: number | null;
   score_team1: number | null;
+  shot_count: number | null;
 }
 
 export default function AnalyzePage() {
   const { orgId, gameId } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
 
   const [game, setGame] = useState<GameRow | null>(null);
@@ -69,6 +76,8 @@ export default function AnalyzePage() {
   }>>([]);
   const [rallies, setRallies] = useState<RallyRow[]>([]);
   const [shots, setShots] = useState<RallyShot[]>([]);
+  const [gamePlayers, setGamePlayers] = useState<GamePlayer[]>([]);
+  const [shotTypes, setShotTypes] = useState<GamePlayerShotType[]>([]);
   const [analysis, setAnalysis] = useState<GameAnalysis | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -113,7 +122,7 @@ export default function AnalyzePage() {
       // Fetch game
       const { data: g } = await supabase
         .from("games")
-        .select("id, org_id, session_name, pbvision_video_id, pbvision_bucket, played_at, team0_score, team1_score, session_id, mux_playback_id, scoring_type, highlights")
+        .select("id, org_id, session_name, pbvision_video_id, pbvision_bucket, played_at, team0_score, team1_score, session_id, mux_playback_id, scoring_type, highlights, team0_kitchen_pct, team1_kitchen_pct")
         .eq("id", gameId)
         .single();
 
@@ -142,10 +151,25 @@ export default function AnalyzePage() {
         );
       }
 
+      // Fetch full game_player rows (ratings, stats) for header + team stats
+      const { data: gpFull } = await supabase
+        .from("game_players")
+        .select("*")
+        .eq("game_id", gameId)
+        .order("player_index");
+      if (!cancelled) setGamePlayers((gpFull as GamePlayer[] | null) ?? []);
+
+      // Fetch per-player shot-type breakdowns for team stats
+      const { data: st } = await supabase
+        .from("game_player_shot_types")
+        .select("*")
+        .eq("game_id", gameId);
+      if (!cancelled) setShotTypes((st as GamePlayerShotType[] | null) ?? []);
+
       // Fetch rallies
       const { data: ral } = await supabase
         .from("rallies")
-        .select("id, rally_index, start_ms, end_ms, winning_team, score_team0, score_team1")
+        .select("id, rally_index, start_ms, end_ms, winning_team, score_team0, score_team1, shot_count")
         .eq("game_id", gameId)
         .order("rally_index");
       const ralList = (ral as RallyRow[] | null) ?? [];
@@ -209,7 +233,14 @@ export default function AnalyzePage() {
   // Sequence handlers
   function handleToggleBuildMode() {
     setBuildMode((v) => {
-      if (v) setDraftShotIds(new Set()); // clearing on exit
+      if (v) {
+        setDraftShotIds(new Set()); // clearing on exit
+      } else {
+        // Entering build mode — pause the video right where it is so the
+        // coach can pick shots without the clock running past them.
+        videoRef.pause();
+        setIsPaused(true);
+      }
       return !v;
     });
     setActiveSequenceId(null);
@@ -283,6 +314,21 @@ export default function AnalyzePage() {
     void videoRef.play();
     setIsPaused(false);
   }
+
+  // Consume `?sequence=<id>` — fired when the coach clicks "Open →" on a saved
+  // sequence from the Coach Review overview. Waits until sequences + shots are
+  // loaded, then activates the requested sequence and clears the param.
+  useEffect(() => {
+    const seqId = searchParams.get("sequence");
+    if (!seqId) return;
+    if (sequences.length === 0 || shots.length === 0) return;
+    const seq = sequences.find((s) => s.id === seqId);
+    if (seq) handleActivateSequence(seq);
+    const next = new URLSearchParams(searchParams);
+    next.delete("sequence");
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sequences, shots]);
 
   function handleActivateSequence(seq: AnalysisSequence) {
     // Clear other selections
@@ -362,6 +408,25 @@ export default function AnalyzePage() {
       videoRef.seek(rally.start_ms);
     }
   }, [currentMs, rallyLoop, selectedRallyId, activeShotId, isLooping, activeSequenceId, draftShotIds, rallies]);
+
+  // Auto-play the draft whenever shots are added/removed while building.
+  // Jumps to the earliest shot's start and plays, so the sequence-loop effect
+  // below will keep it on repeat. Runs only when the draft changes, not on
+  // every currentMs tick.
+  useEffect(() => {
+    if (!buildMode) return;
+    if (draftShotIds.size === 0) return;
+    const seqShots = shots
+      .filter((s) => draftShotIds.has(s.id))
+      .sort((a, b) => a.start_ms - b.start_ms);
+    if (seqShots.length === 0) return;
+    const start = seqShots[0].start_ms;
+    videoRef.seek(start);
+    videoRef.setPlaybackRate(playbackRate);
+    void videoRef.play();
+    setIsPaused(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftShotIds, buildMode]);
 
   // Sequence loop: when a saved sequence is active OR a draft is being previewed,
   // loop from the earliest selected shot's start to the latest's end.
@@ -454,6 +519,28 @@ export default function AnalyzePage() {
   // Set of flagged shot IDs for fast lookup
   const flaggedShotIds = new Set(flags.map((f) => f.shot_id));
 
+  // Shots belonging to any saved sequence on the *current* rally — used to
+  // highlight them in the shot list so the coach can see prior work at a glance.
+  const savedSequenceShotIds = currentRally
+    ? new Set(
+        sequences
+          .filter((s) => s.rally_id === currentRally.id)
+          .flatMap((s) => s.shot_ids),
+      )
+    : new Set<string>();
+
+  // Fault-ending shots across the whole game — any shot whose PB Vision raw
+  // data carries an `err` field. Used to highlight the point-ending mistake
+  // in the shot list, matching the fault dot on the rally strip.
+  const faultShotIds = new Set(
+    shots
+      .filter((s) => {
+        const raw = (s.raw_data ?? {}) as Record<string, unknown>;
+        return !!raw.err;
+      })
+      .map((s) => s.id),
+  );
+
   // The currently "playing" shot (for the video tooltip overlay) — based on currentMs
   const playingShot = shots.find(
     (s) => currentMs >= s.start_ms && currentMs <= s.end_ms,
@@ -464,24 +551,20 @@ export default function AnalyzePage() {
 
   return (
     <div style={{ maxWidth: 1400 }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-        <Link
-          to={`/org/${orgId}/games/${gameId}`}
-          style={{ fontSize: 13, color: "#888", textDecoration: "none" }}
-        >
-          &larr; Back to game
-        </Link>
-        <span style={{ color: "#ddd" }}>|</span>
-        <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0, flex: 1 }}>
-          Analyze: {game.session_name || game.pbvision_video_id}
-        </h2>
-        {game.team0_score != null && game.team1_score != null && (
-          <span style={{ fontSize: 18, fontWeight: 600, color: "#333" }}>
-            {game.team0_score}–{game.team1_score}
-          </span>
-        )}
-      </div>
+      <GameWorkspaceHeader
+        orgId={orgId ?? ""}
+        gameId={gameId ?? ""}
+        mode="analyze"
+        title={game.session_name || game.pbvision_video_id}
+        score={{ team0: game.team0_score, team1: game.team1_score }}
+      />
+
+      {/* Player header — expandable chips with name + stats bar */}
+      {players.length > 0 && gamePlayers.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <PlayerHeaderBar players={players} gamePlayers={gamePlayers} />
+        </div>
+      )}
 
       {/* Coach Review entry point */}
       {rallies.length > 0 && shots.length > 0 && (
@@ -533,6 +616,8 @@ export default function AnalyzePage() {
             rallies={rallies}
             shots={shots}
             highlights={game.highlights ?? []}
+            sequences={sequences}
+            flags={flags}
             activeRallyId={currentRally?.id ?? null}
             currentMs={currentMs}
             rallyLoop={rallyLoop}
@@ -675,6 +760,8 @@ export default function AnalyzePage() {
                 onToggleDraftShot={handleToggleDraftShot}
                 flaggedShotIds={flaggedShotIds}
                 onToggleFlag={handleToggleFlag}
+                savedSequenceShotIds={savedSequenceShotIds}
+                faultShotIds={faultShotIds}
               />
             </div>
           </div>
@@ -712,6 +799,20 @@ export default function AnalyzePage() {
                 onJumpToShot={handleJumpToFlaggedShot}
                 onUnflag={handleToggleFlag}
                 onReload={reloadNotes}
+              />
+            </div>
+          )}
+
+          {/* Team stats — below the game */}
+          {gamePlayers.length > 0 && (
+            <div style={{ marginTop: 24 }}>
+              <TeamStatsBlock
+                players={players}
+                gamePlayers={gamePlayers}
+                shotTypes={shotTypes}
+                rallies={rallies}
+                team0KitchenPct={game.team0_kitchen_pct}
+                team1KitchenPct={game.team1_kitchen_pct}
               />
             </div>
           )}

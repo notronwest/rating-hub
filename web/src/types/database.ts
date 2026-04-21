@@ -134,6 +134,28 @@ export interface RallyShot {
   quality: number | null;
   is_final: boolean;
   raw_data: Record<string, unknown> | null;
+  // Added in migration 015 — per-shot geometry from PB Vision augmented insights.
+  // null on rows that haven't been enriched yet (compact-only imports).
+  contact_x: number | null;
+  contact_y: number | null;
+  contact_z: number | null;
+  land_x: number | null;
+  land_y: number | null;
+  land_z: number | null;
+  speed_mph: number | null;
+  height_over_net: number | null;
+  distance_ft: number | null;
+  distance_from_baseline: number | null;
+  ball_direction: string | null;
+  trajectory: {
+    confidence?: number;
+    start?: { ms?: number; location?: { x: number; y: number; z: number }; zone?: string };
+    peak?: { x: number; y: number; z: number };
+    end?: { ms?: number; location?: { x: number; y: number; z: number }; zone?: string };
+  } | null;
+  player_positions: Array<{ x: number; y: number }> | null;
+  advantage_scale: number[] | null;
+  shot_errors: Record<string, unknown> | null;
 }
 
 export interface PlayerRatingSnapshot {
