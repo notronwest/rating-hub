@@ -15,14 +15,14 @@ const TYPE_COLORS: Record<string, string> = {
   serve: "#e8710a",
   return: "#0d904f",
   third: "#9334e6",
-  drive: "#ef5350",
+  drive: "#5e35b1",
   dink: "#4caf50",
   drop: "#29b6f6",
   lob: "#fdd835",
-  smash: "#d93025",
+  smash: "#303f9f",
   volley: "#7e57c2",
   reset: "#00bcd4",
-  speedup: "#ff5722",
+  speedup: "#ef6c00",
 };
 
 /**

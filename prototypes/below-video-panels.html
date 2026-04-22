@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Below-the-video panels · consistency prototype</title>
+  <style>
+    :root {
+      --ink: #333;
+      --muted: #666;
+      --faint: #999;
+      --bg: #f7f7f8;
+      --line: #e2e2e2;
+      --line-soft: #f0f0f0;
+      --blue: #1a73e8;
+      --blue-bg: #e8f0fe;
+      --purple: #7c3aed;
+      --purple-bg: #f5f0ff;
+      --amber: #f59e0b;
+      --amber-bg: #fff8e1;
+      --red: #ef4444;
+      --red-bg: #fdebea;
+      --grey: #8b93a1;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, -apple-system, Segoe UI, sans-serif; }
+    body { padding: 24px 32px; }
+    .wrap { max-width: 1000px; margin: 0 auto; }
+    h1 { font-size: 18px; margin: 0 0 6px; }
+    h2 { font-size: 13px; margin: 32px 0 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
+    .note { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+    .label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 8px; }
+
+    .video-placeholder {
+      height: 140px;
+      background: #1a1a1a;
+      border-radius: 10px;
+      color: #666;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      margin-bottom: 14px;
+    }
+
+    /* ── Shared item row inside any panel ── */
+    .item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--line-soft);
+      font-size: 13px;
+    }
+    .item:last-child { border-bottom: none; }
+    .item .ts {
+      padding: 3px 8px;
+      background: var(--blue-bg);
+      color: var(--blue);
+      border: 1px solid #c6dafc;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+    .item .type {
+      padding: 2px 8px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+    .item .meta { flex: 1; min-width: 0; color: var(--ink); }
+    .item .meta small { display: block; font-size: 11px; color: var(--muted); font-weight: 400; }
+    .item .right { font-size: 11px; color: var(--faint); flex-shrink: 0; }
+    .item .dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .dot-seq { background: var(--purple); }
+    .dot-flag { background: var(--amber); }
+    .dot-fault { background: var(--red); }
+    .type-drop { background: #29b6f622; color: #29b6f6; }
+    .type-drive { background: #5e35b122; color: #5e35b1; }
+    .type-smash { background: #303f9f22; color: #303f9f; }
+    .type-dink { background: #4caf5022; color: #4caf50; }
+
+    /* ──────────────────────────────────────────────────────────────── */
+    /* Panel shell                                                     */
+    /* ──────────────────────────────────────────────────────────────── */
+    .panel {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    /* ── Option A: segmented tabs (pill) ── */
+    .A .tabrow {
+      display: flex;
+      gap: 4px;
+      padding: 6px;
+      background: #f7f7f8;
+      border-bottom: 1px solid var(--line);
+    }
+    .A .tab {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 14px;
+      border-radius: 7px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--muted);
+      cursor: pointer;
+      background: transparent;
+      border: none;
+      font-family: inherit;
+    }
+    .A .tab.active {
+      background: #fff;
+      color: var(--ink);
+      font-weight: 700;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+    }
+    .A .tab .count {
+      padding: 1px 6px;
+      font-size: 10px;
+      background: #eceff3;
+      color: var(--muted);
+      border-radius: 999px;
+      font-weight: 700;
+    }
+    .A .tab.active .count { background: var(--blue-bg); color: var(--blue); }
+
+    /* ── Option B: filter chips row + single timeline list ── */
+    .B .chiprow {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+    }
+    .B .chiprow .label {
+      margin: 0 4px 0 0;
+      font-size: 11px;
+    }
+    .B .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      background: #fff;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .B .chip.active { color: var(--ink); border-color: #c6dafc; background: var(--blue-bg); }
+    .B .chip .count {
+      padding: 1px 6px;
+      background: #eceff3;
+      border-radius: 999px;
+      font-size: 10px;
+    }
+    .B .chip.active .count { background: #fff; color: var(--blue); }
+    .B .chip .cdot {
+      width: 8px; height: 8px; border-radius: 50%;
+    }
+    .B .all-count { margin-left: auto; font-size: 11px; color: var(--faint); }
+
+    /* ── Option C: stacked counts header with connected tabs ── */
+    .C .summary {
+      display: flex;
+      align-items: stretch;
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+    }
+    .C .stat {
+      flex: 1;
+      padding: 14px 16px;
+      text-align: left;
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      border-right: 1px solid var(--line);
+      font-family: inherit;
+      position: relative;
+    }
+    .C .stat:last-child { border-right: none; }
+    .C .stat.active::after {
+      content: "";
+      position: absolute;
+      left: 0; right: 0; bottom: -1px;
+      height: 3px;
+      background: var(--blue);
+    }
+    .C .stat.active { background: var(--blue-bg); }
+    .C .stat .num {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--ink);
+      line-height: 1;
+    }
+    .C .stat .kind {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-top: 4px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    /* ── Option D: dropdown selector + list ── */
+    .D .selectrow {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+    }
+    .D select {
+      padding: 6px 8px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 13px;
+    }
+
+    /* ── Option E: accordion — all three visible, each collapsible ── */
+    .E .section {
+      border-bottom: 1px solid var(--line);
+    }
+    .E .section:last-child { border-bottom: none; }
+    .E .secheader {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      background: #fafafa;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--ink);
+    }
+    .E .secheader .count {
+      padding: 1px 7px;
+      background: #eceff3;
+      color: var(--muted);
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .E .secheader.active { background: var(--blue-bg); color: var(--blue); }
+    .E .secheader.active .count { background: #fff; color: var(--blue); }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Below-the-video panels — 5 layout options</h1>
+  <p class="note">
+    Same three data streams — <b>Sequences</b>, <b>Flags</b>, <b>Faults</b> — displayed consistently below the Analyze video. Each option shows the same sample data (2 sequences, 3 flags, 5 faults).
+  </p>
+
+  <div class="video-placeholder">· video would be here ·</div>
+
+  <!-- ────────── Option A: segmented tabs ────────── -->
+  <div class="label">Option A · Segmented tabs (matches the top-level game tab style)</div>
+  <div class="panel A">
+    <div class="tabrow">
+      <button class="tab active">
+        <span class="dot" style="background:var(--purple)"></span> Sequences
+        <span class="count">2</span>
+      </button>
+      <button class="tab">
+        <span class="dot" style="background:var(--amber)"></span> Flags
+        <span class="count">3</span>
+      </button>
+      <button class="tab">
+        <span class="dot" style="background:var(--red)"></span> Faults
+        <span class="count">5</span>
+      </button>
+    </div>
+    <div class="item">
+      <span class="ts">0:19 ▶</span>
+      <span class="type type-drive">drive</span>
+      <span class="meta">Geoff · rally 2 shots 3–5 <small>Drive on the transition — not ready at kitchen</small></span>
+      <span class="right">5 shots</span>
+    </div>
+    <div class="item">
+      <span class="ts">1:42 ▶</span>
+      <span class="type type-dink">dink</span>
+      <span class="meta">Ron · rally 6 shots 8–11 <small>Attackable dink to the middle</small></span>
+      <span class="right">4 shots</span>
+    </div>
+  </div>
+
+  <!-- ────────── Option B: filter chips + single list ────────── -->
+  <div class="label" style="margin-top:28px;">Option B · Filter chips + one merged chronological list</div>
+  <div class="panel B">
+    <div class="chiprow">
+      <span class="label">Filter</span>
+      <button class="chip active"><span class="cdot" style="background:var(--ink)"></span> All <span class="count">10</span></button>
+      <button class="chip"><span class="cdot" style="background:var(--purple)"></span> Sequences <span class="count">2</span></button>
+      <button class="chip"><span class="cdot" style="background:var(--amber)"></span> Flags <span class="count">3</span></button>
+      <button class="chip"><span class="cdot" style="background:var(--red)"></span> Faults <span class="count">5</span></button>
+      <span class="all-count">chronological order</span>
+    </div>
+    <div class="item">
+      <span class="dot dot-fault"></span>
+      <span class="ts">0:20 ▶</span>
+      <span class="type type-drive">drive</span>
+      <span class="meta">Jelena · fault ending rally 2 <small>Drive went out</small></span>
+    </div>
+    <div class="item">
+      <span class="dot dot-seq"></span>
+      <span class="ts">0:19 ▶</span>
+      <span class="type type-drive">drive</span>
+      <span class="meta">Geoff · sequence (5 shots) · rally 2 <small>Not ready at kitchen</small></span>
+    </div>
+    <div class="item">
+      <span class="dot dot-flag"></span>
+      <span class="ts">0:45 ▶</span>
+      <span class="type type-smash">smash</span>
+      <span class="meta">Celeste · flagged · rally 4 <small>Good setup but put away left</small></span>
+    </div>
+    <div class="item">
+      <span class="dot dot-fault"></span>
+      <span class="ts">1:08 ▶</span>
+      <span class="type type-dink">dink</span>
+      <span class="meta">Ron · fault ending rally 5 <small>Dink into net</small></span>
+    </div>
+  </div>
+  <p class="note" style="margin-top:6px;">Shows "everything happening on this video" in one timeline, with chips to filter.</p>
+
+  <!-- ────────── Option C: counts header ────────── -->
+  <div class="label" style="margin-top:28px;">Option C · Big counts header (dashboard feel)</div>
+  <div class="panel C">
+    <div class="summary">
+      <button class="stat active">
+        <div class="num">2</div>
+        <div class="kind"><span class="dot dot-seq"></span> sequences</div>
+      </button>
+      <button class="stat">
+        <div class="num">3</div>
+        <div class="kind"><span class="dot dot-flag"></span> flags</div>
+      </button>
+      <button class="stat">
+        <div class="num">5</div>
+        <div class="kind"><span class="dot dot-fault"></span> faults</div>
+      </button>
+    </div>
+    <div class="item">
+      <span class="ts">0:19 ▶</span>
+      <span class="type type-drive">drive</span>
+      <span class="meta">Geoff · rally 2 shots 3–5 <small>Drive on the transition — not ready at kitchen</small></span>
+      <span class="right">5 shots</span>
+    </div>
+    <div class="item">
+      <span class="ts">1:42 ▶</span>
+      <span class="type type-dink">dink</span>
+      <span class="meta">Ron · rally 6 shots 8–11 <small>Attackable dink to the middle</small></span>
+      <span class="right">4 shots</span>
+    </div>
+  </div>
+
+  <!-- ────────── Option D: dropdown selector ────────── -->
+  <div class="label" style="margin-top:28px;">Option D · Dropdown selector (quietest)</div>
+  <div class="panel D">
+    <div class="selectrow">
+      <label class="label" style="margin:0;">Show</label>
+      <select>
+        <option>Sequences (2)</option>
+        <option>Flags (3)</option>
+        <option>Faults (5)</option>
+        <option>Everything (10)</option>
+      </select>
+      <span class="right" style="margin-left:auto; font-size:11px; color:var(--faint);">Sort: time ▾</span>
+    </div>
+    <div class="item">
+      <span class="ts">0:19 ▶</span>
+      <span class="type type-drive">drive</span>
+      <span class="meta">Geoff · rally 2 shots 3–5 <small>Drive on the transition — not ready at kitchen</small></span>
+      <span class="right">5 shots</span>
+    </div>
+    <div class="item">
+      <span class="ts">1:42 ▶</span>
+      <span class="type type-dink">dink</span>
+      <span class="meta">Ron · rally 6 shots 8–11 <small>Attackable dink to the middle</small></span>
+      <span class="right">4 shots</span>
+    </div>
+  </div>
+
+  <!-- ────────── Option E: accordion (all visible, collapsible) ────────── -->
+  <div class="label" style="margin-top:28px;">Option E · Accordion — all three visible, any can collapse</div>
+  <div class="panel E">
+    <div class="section">
+      <div class="secheader active">
+        <span class="dot dot-seq"></span>
+        Sequences
+        <span class="count">2</span>
+        <span style="flex:1"></span>
+        <span style="font-size:11px; color:var(--muted); font-weight:400;">▾</span>
+      </div>
+      <div class="item">
+        <span class="ts">0:19 ▶</span>
+        <span class="type type-drive">drive</span>
+        <span class="meta">Geoff · rally 2 shots 3–5</span>
+        <span class="right">5 shots</span>
+      </div>
+    </div>
+    <div class="section">
+      <div class="secheader">
+        <span class="dot dot-flag"></span>
+        Flags
+        <span class="count">3</span>
+        <span style="flex:1"></span>
+        <span style="font-size:11px; color:var(--muted); font-weight:400;">▸</span>
+      </div>
+    </div>
+    <div class="section">
+      <div class="secheader">
+        <span class="dot dot-fault"></span>
+        Faults
+        <span class="count">5</span>
+        <span style="flex:1"></span>
+        <span style="font-size:11px; color:var(--muted); font-weight:400;">▸</span>
+      </div>
+    </div>
+  </div>
+
+  <h2>Notes to decide</h2>
+  <ul style="color:var(--muted); font-size:13px;">
+    <li>Do you want faults to show up in this area at all, or is the END tag + red right stripe in the shot list enough?</li>
+    <li>If yes, do you want "not significant" dismissals hidden from the count? (Probably yes.)</li>
+    <li>Should clicking an item play that item on repeat (loop), or just seek?</li>
+  </ul>
+</div>
+</body>
+</html>

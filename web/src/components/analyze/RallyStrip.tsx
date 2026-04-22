@@ -27,9 +27,7 @@ interface Props {
   flags?: FlaggedShot[];
   activeRallyId: string | null;
   currentMs: number;
-  rallyLoop: boolean;
   onRallyClick: (rally: Rally) => void;
-  onToggleRallyLoop: () => void;
 }
 
 /**
@@ -51,9 +49,7 @@ export default function RallyStrip({
   flags = [],
   activeRallyId,
   currentMs,
-  rallyLoop,
   onRallyClick,
-  onToggleRallyLoop,
 }: Props) {
   if (rallies.length === 0) return null;
 
@@ -113,35 +109,25 @@ export default function RallyStrip({
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <div style={{ display: "flex", gap: 14, fontSize: 11, color: "#666", flexWrap: "wrap" }}>
           <Legend color="#1a73e8" label="Team 0 (far)" />
-          <Legend color="#4caf50" label="Team 1 (near)" />
+          <Legend color="#f59e0b" label="Team 1 (near)" />
           <span style={{ color: "#888" }}>🔥 firefight</span>
           <span style={{ color: "#888" }}>
-            <span style={{ color: "#1a73e8", fontWeight: 700 }}>▤</span> sequence ·{" "}
-            <span style={{ color: "#d97706", fontWeight: 700 }}>⚑</span> flag ·{" "}
-            <span style={{ color: "#ef4444", fontWeight: 700 }}>●</span> ended on fault
+            <span style={{ color: "#7c3aed", fontWeight: 700 }}>▤</span> sequence ·{" "}
+            <span style={{ color: "#475569", fontWeight: 700 }}>⚑</span> flag ·{" "}
+            <span
+              style={{
+                display: "inline-block",
+                width: 14,
+                height: 3,
+                background: "#ef4444",
+                borderRadius: 1,
+                verticalAlign: "middle",
+              }}
+            />{" "}
+            ended on fault
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 11, color: "#666" }}>
-          <button
-            onClick={onToggleRallyLoop}
-            title="When on, clicking a rally plays it on repeat until you select something else"
-            style={{
-              padding: "4px 10px",
-              fontSize: 11,
-              fontWeight: rallyLoop ? 700 : 400,
-              borderTop: `1px solid ${rallyLoop ? "#1a73e8" : "#ddd"}`,
-              borderBottom: `1px solid ${rallyLoop ? "#1a73e8" : "#ddd"}`,
-              borderLeft: `1px solid ${rallyLoop ? "#1a73e8" : "#ddd"}`,
-              borderRight: `1px solid ${rallyLoop ? "#1a73e8" : "#ddd"}`,
-              borderRadius: 4,
-              background: rallyLoop ? "#1a73e8" : "#fff",
-              color: rallyLoop ? "#fff" : "#555",
-              cursor: "pointer",
-              fontFamily: "inherit",
-            }}
-          >
-            🔁 {rallyLoop ? "Looping rally" : "Loop rally"}
-          </button>
           <span>
             {rallies.length} {rallies.length === 1 ? "rally" : "rallies"}
           </span>
@@ -175,9 +161,8 @@ export default function RallyStrip({
           const seqCount = sequenceCountByRally.get(r.id) ?? 0;
           const flagCount = flagCountByRally.get(r.id) ?? 0;
 
-          const score = r.score_team0 != null && r.score_team1 != null
-            ? `${r.score_team0}-${r.score_team1}`
-            : null;
+          const hasScore = r.score_team0 != null && r.score_team1 != null;
+          const score = hasScore ? `${r.score_team0}-${r.score_team1}` : null;
 
           return (
             <button
@@ -205,6 +190,10 @@ export default function RallyStrip({
                 borderLeft: `1px solid ${isActive ? "#1a73e8" : isPlaying ? "#4caf50" : "transparent"}`,
                 borderRight: `1px solid ${isActive ? "#1a73e8" : isPlaying ? "#4caf50" : "transparent"}`,
                 borderRadius: 6,
+                // Fault is communicated as a thin red stripe inset along the bottom
+                // edge — overlays existing borders without conflicting with
+                // active/playing highlight colors.
+                boxShadow: hasFault ? "inset 0 -3px 0 #ef4444" : undefined,
                 background: isActive ? "#e8f0fe" : isPlaying ? "#e6f4ea" : "#fafafa",
                 color: "#333",
                 cursor: "pointer",
@@ -229,20 +218,22 @@ export default function RallyStrip({
                 {isFirefight ? "🔥" : ""}
               </span>
 
-              {/* Score */}
-              {score ? (
+              {/* Score — each team's digit colored with its team color */}
+              {hasScore ? (
                 <span
                   style={{
                     fontSize: 10,
                     padding: "1px 4px",
                     background: "#f0f0f0",
                     borderRadius: 3,
-                    color: "#555",
                     minWidth: 28,
                     textAlign: "center",
+                    fontWeight: 700,
                   }}
                 >
-                  {score}
+                  <span style={{ color: "#1a73e8" }}>{r.score_team0}</span>
+                  <span style={{ color: "#888" }}>-</span>
+                  <span style={{ color: "#f59e0b" }}>{r.score_team1}</span>
                 </span>
               ) : (
                 <span style={{ height: 14 }} />
@@ -251,7 +242,7 @@ export default function RallyStrip({
               {/* Team bars */}
               <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 40, width: 28 }}>
                 <TeamBar count={team0Count} max={maxShots} color="#1a73e8" />
-                <TeamBar count={team1Count} max={maxShots} color="#4caf50" />
+                <TeamBar count={team1Count} max={maxShots} color="#f59e0b" />
               </div>
 
               {/* Coach-work row: sequence + flag icons under a divider.
@@ -274,20 +265,14 @@ export default function RallyStrip({
                 <CoachWorkIcon
                   icon="▤"
                   count={seqCount}
-                  activeColor="#1a73e8"
+                  activeColor="#7c3aed"
                   label="sequence"
                 />
                 <CoachWorkIcon
                   icon="⚑"
                   count={flagCount}
-                  activeColor="#d97706"
+                  activeColor="#475569"
                   label="flag"
-                />
-                <CoachWorkIcon
-                  icon="●"
-                  count={hasFault ? 1 : 0}
-                  activeColor="#ef4444"
-                  label="fault"
                 />
               </div>
             </button>

@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Shot indicators · consistent treatment</title>
+  <style>
+    :root {
+      --ink: #333;
+      --muted: #666;
+      --faint: #999;
+      --bg: #f7f7f8;
+      --line: #e2e2e2;
+      --line-soft: #f0f0f0;
+      --blue: #1a73e8;
+      --blue-bg: #e8f0fe;
+      --purple: #7c3aed;
+      --amber: #f59e0b;
+      --red: #ef4444;
+      --grey: #8b93a1;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, -apple-system, Segoe UI, sans-serif; }
+    body { padding: 24px 32px; }
+    .wrap { max-width: 900px; margin: 0 auto; }
+    h1 { font-size: 18px; margin: 0 0 6px; }
+    h2 { font-size: 13px; margin: 28px 0 8px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
+    .note { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+    .label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 8px; }
+
+    /* Shot row — shared shell so we're comparing apples to apples */
+    .shot-list {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .shot-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px 8px 14px;
+      border-bottom: 1px solid var(--line-soft);
+      position: relative;
+      border-left: 3px solid transparent;
+    }
+    .shot-row:last-child { border-bottom: none; }
+    .shot-num {
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      background: #f0f0f0; color: #555;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 600;
+      flex-shrink: 0;
+    }
+    .shot-type {
+      padding: 2px 8px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-radius: 4px;
+      min-width: 52px;
+      text-align: center;
+      background: #29b6f622;
+      color: #29b6f6;
+    }
+    .st-drive { background: #5e35b122; color: #5e35b1; }
+    .st-smash { background: #303f9f22; color: #303f9f; }
+    .st-drop  { background: #29b6f622; color: #29b6f6; }
+    .st-dink  { background: #4caf5022; color: #4caf50; }
+    .st-serve { background: #e8710a22; color: #e8710a; }
+
+    .player-bit {
+      flex: 1;
+      min-width: 0;
+      font-size: 13px;
+      color: #333;
+      font-weight: 500;
+    }
+    .player-bit small {
+      display: block;
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 400;
+    }
+    .right-bits {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--faint);
+      margin-left: auto;
+    }
+    .end {
+      padding: 1px 6px;
+      background: #fff3cd;
+      color: #856404;
+      border-radius: 3px;
+      font-size: 10px;
+      font-weight: 600;
+    }
+
+    /* ─── Option A: all left-edge stripes, no badges ─── */
+    .A .seq { border-left-color: var(--purple); }
+    .A .flag { border-left-color: var(--amber); }
+    .A .fault { border-left-color: var(--grey); }
+
+    /* ─── Option B: all inline badges, no stripes ─── */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 1px 6px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      border-radius: 3px;
+      line-height: 1;
+    }
+    .b-seq   { background: #7c3aed14; color: var(--purple); }
+    .b-flag  { background: #f59e0b20; color: #b45309; }
+    .b-fault { background: #8b93a120; color: #475569; }
+
+    /* ─── Option C: stripes + matching badges (hybrid) ─── */
+    .C .seq   { border-left-color: var(--purple); }
+    .C .flag  { border-left-color: var(--amber); }
+    .C .fault { border-left-color: var(--grey); }
+
+    /* ─── Option D: subtle dot markers at left ─── */
+    .D .dot {
+      position: absolute;
+      left: 8px; top: 50%; transform: translateY(-50%);
+      width: 8px; height: 8px; border-radius: 50%;
+    }
+    .D .shot-row { padding-left: 22px; }
+    .D .seq-dot   { background: var(--purple); }
+    .D .flag-dot  { background: var(--amber); }
+    .D .fault-dot { background: var(--grey); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Shot indicators — consistent treatment</h1>
+    <p class="note">
+      Four options for how to show <b>sequence</b>, <b>flag</b>, and <b>fault</b> on the Analyze shot list. Each option treats all three the same way — different only by color. Pick one.
+    </p>
+
+    <h2>Color key (same across all options)</h2>
+    <div style="display:flex; gap:18px; font-size:12px; color:var(--muted); margin-bottom:16px;">
+      <span><span style="display:inline-block; width:10px; height:10px; background:var(--purple); border-radius:2px; margin-right:4px; vertical-align:middle;"></span>sequence</span>
+      <span><span style="display:inline-block; width:10px; height:10px; background:var(--amber); border-radius:2px; margin-right:4px; vertical-align:middle;"></span>flag</span>
+      <span><span style="display:inline-block; width:10px; height:10px; background:var(--grey); border-radius:2px; margin-right:4px; vertical-align:middle;"></span>fault (rally-ending error)</span>
+    </div>
+
+    <!-- ────────── Option A: left stripes only ────────── -->
+    <div class="label">Option A · Left-edge stripe only</div>
+    <div class="shot-list A">
+      <div class="shot-row seq">
+        <span class="shot-num">3</span>
+        <span class="shot-type st-drop">drop</span>
+        <span class="player-bit">Ron West <small>forehand · neutral</small></span>
+        <span class="right-bits">0:17</span>
+      </div>
+      <div class="shot-row seq flag">
+        <span class="shot-num">4</span>
+        <span class="shot-type st-drive">drive</span>
+        <span class="player-bit">Geoff Whitchurch <small>backhand · dig</small></span>
+        <span class="right-bits">0:19</span>
+      </div>
+      <div class="shot-row">
+        <span class="shot-num">5</span>
+        <span class="shot-type st-smash">smash</span>
+        <span class="player-bit">Celeste Goodhue <small>backhand · neutral</small></span>
+        <span class="right-bits">0:19</span>
+      </div>
+      <div class="shot-row fault">
+        <span class="shot-num">6</span>
+        <span class="shot-type st-drive">drive</span>
+        <span class="player-bit">Jelena Nikolic <small>backhand · neutral</small></span>
+        <span class="right-bits"><span class="end">END</span> 0:20</span>
+      </div>
+    </div>
+    <p class="note" style="margin-top:8px;">
+      Row 4 has both <b>sequence</b> + <b>flag</b>. Since we only have one stripe, I show the most "structural" one (sequence) — the flag still appears in the right-side icon column.
+    </p>
+
+    <!-- ────────── Option B: inline badges only ────────── -->
+    <div class="label" style="margin-top:28px;">Option B · Inline badges (no stripes)</div>
+    <div class="shot-list">
+      <div class="shot-row">
+        <span class="shot-num">3</span>
+        <span class="shot-type st-drop">drop</span>
+        <span class="player-bit">Ron West <small>forehand · neutral</small></span>
+        <span class="badge b-seq">▤ seq</span>
+        <span class="right-bits">0:17</span>
+      </div>
+      <div class="shot-row">
+        <span class="shot-num">4</span>
+        <span class="shot-type st-drive">drive</span>
+        <span class="player-bit">Geoff Whitchurch <small>backhand · dig</small></span>
+        <span class="badge b-seq">▤ seq</span>
+        <span class="badge b-flag">⚑ flag</span>
+        <span class="right-bits">0:19</span>
+      </div>
+      <div class="shot-row">
+        <span class="shot-num">5</span>
+        <span class="shot-type st-smash">smash</span>
+        <span class="player-bit">Celeste Goodhue <small>backhand · neutral</small></span>
+        <span class="right-bits">0:19</span>
+      </div>
+      <div class="shot-row">
+        <span class="shot-num">6</span>
+        <span class="shot-type st-drive">drive</span>
+        <span class="player-bit">Jelena Nikolic <small>backhand · neutral</small></span>
+        <span class="badge b-fault">● fault</span>
+        <span class="right-bits"><span class="end">END</span> 0:20</span>
+      </div>
+    </div>
+    <p class="note" style="margin-top:8px;">
+      Multiple indicators stack inline. No stripe at all.
+    </p>
+
+    <!-- ────────── Option C: stripes + badges (hybrid) ────────── -->
+    <div class="label" style="margin-top:28px;">Option C · Left stripe <em>and</em> matching badge</div>
+    <div class="shot-list C">
+      <div class="shot-row seq">
+        <span class="shot-num">3</span>
+        <span class="shot-type st-drop">drop</span>
+        <span class="player-bit">Ron West <small>forehand · neutral</small></span>
+        <span class="badge b-seq">▤ seq</span>
+        <span class="right-bits">0:17</span>
+      </div>
+      <div class="shot-row seq">
+        <span class="shot-num">4</span>
+        <span class="shot-type st-drive">drive</span>
+        <span class="player-bit">Geoff Whitchurch <small>backhand · dig</small></span>
+        <span class="badge b-seq">▤ seq</span>
+        <span class="badge b-flag">⚑ flag</span>
+        <span class="right-bits">0:19</span>
+      </div>
+      <div class="shot-row">
+        <span class="shot-num">5</span>
+        <span class="shot-type st-smash">smash</span>
+        <span class="player-bit">Celeste Goodhue <small>backhand · neutral</small></span>
+        <span class="right-bits">0:19</span>
+      </div>
+      <div class="shot-row fault">
+        <span class="shot-num">6</span>
+        <span class="shot-type st-drive">drive</span>
+        <span class="player-bit">Jelena Nikolic <small>backhand · neutral</small></span>
+        <span class="badge b-fault">● fault</span>
+        <span class="right-bits"><span class="end">END</span> 0:20</span>
+      </div>
+    </div>
+
+    <!-- ────────── Option D: tiny colored dot + badge ────────── -->
+    <div class="label" style="margin-top:28px;">Option D · Tiny colored dot left of row (no stripe)</div>
+    <div class="shot-list D">
+      <div class="shot-row">
+        <span class="dot seq-dot"></span>
+        <span class="shot-num">3</span>
+        <span class="shot-type st-drop">drop</span>
+        <span class="player-bit">Ron West <small>forehand · neutral</small></span>
+        <span class="right-bits">0:17</span>
+      </div>
+      <div class="shot-row">
+        <span class="dot seq-dot"></span>
+        <span class="shot-num">4</span>
+        <span class="shot-type st-drive">drive</span>
+        <span class="player-bit">Geoff Whitchurch <small>backhand · dig</small></span>
+        <span class="badge b-flag">⚑ flag</span>
+        <span class="right-bits">0:19</span>
+      </div>
+      <div class="shot-row">
+        <span class="shot-num">5</span>
+        <span class="shot-type st-smash">smash</span>
+        <span class="player-bit">Celeste Goodhue <small>backhand · neutral</small></span>
+        <span class="right-bits">0:19</span>
+      </div>
+      <div class="shot-row">
+        <span class="dot fault-dot"></span>
+        <span class="shot-num">6</span>
+        <span class="shot-type st-drive">drive</span>
+        <span class="player-bit">Jelena Nikolic <small>backhand · neutral</small></span>
+        <span class="right-bits"><span class="end">END</span> 0:20</span>
+      </div>
+    </div>
+    <p class="note" style="margin-top:8px;">
+      The dot is the "primary" class for the row (one per shot). Additional indicators become badges.
+    </p>
+
+    <h2>Also need to figure out</h2>
+    <ul style="color:var(--muted); font-size:13px;">
+      <li><b>Fault color</b> — I made it grey here to avoid red (per your "no red for shot types"). Still OK since it's not a shot-type; it's an event. Tell me if you want it back to red, or keep as neutral grey.</li>
+      <li><b>Same treatment on the rally strip</b> — today rally cards get a red stripe for fault + purple border for active. I can mirror whatever option you pick here onto the strip so both places stay consistent.</li>
+    </ul>
+  </div>
+</body>
+</html>

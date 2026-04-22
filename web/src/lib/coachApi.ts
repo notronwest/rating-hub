@@ -378,6 +378,41 @@ export async function unflagShot(
   if (error) throw new Error(error.message);
 }
 
+/**
+ * Promote a flagged shot into a sequence by grabbing a window of shots
+ * around the flagged one (clamped to the rally). Copies over the flag's
+ * fptm + drills so any diagnosis the coach already did survives.
+ */
+export async function promoteFlagToSequence(params: {
+  flag: FlaggedShot;
+  shots: Array<{ id: string; rally_id: string; shot_index: number; player_index: number | null }>;
+  before: number;
+  after: number;
+  playerId?: string | null;
+}): Promise<AnalysisSequence> {
+  const { flag, shots, before, after } = params;
+  const flagged = shots.find((s) => s.id === flag.shot_id);
+  if (!flagged) throw new Error("Flagged shot not found in shots list");
+
+  const rallyShots = shots
+    .filter((s) => s.rally_id === flagged.rally_id)
+    .sort((a, b) => a.shot_index - b.shot_index);
+
+  const idx = rallyShots.findIndex((s) => s.id === flag.shot_id);
+  const startIdx = Math.max(0, idx - before);
+  const endIdx = Math.min(rallyShots.length - 1, idx + after);
+  const shotIds = rallyShots.slice(startIdx, endIdx + 1).map((s) => s.id);
+
+  return createSequence({
+    analysisId: flag.analysis_id,
+    rallyId: flagged.rally_id,
+    shotIds,
+    playerId: params.playerId ?? null,
+    fptm: flag.fptm ?? undefined,
+    drills: flag.drills ?? undefined,
+  });
+}
+
 export async function updateFlagNote(id: string, note: string | null): Promise<void> {
   const { error } = await supabase
     .from("analysis_flagged_shots")

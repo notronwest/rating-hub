@@ -47,6 +47,13 @@ interface Props {
   savedSequenceShotIds?: Set<string>;
   /** Ids of shots that ended the rally on a fault (PB Vision `err` in raw_data). */
   faultShotIds?: Set<string>;
+  /** Set of `loss:<rally_id>:<shot_id>` keys the coach has marked as
+   *  insignificant. Shots in this set have their fault-style tuned down and
+   *  the action button flips to "restore". */
+  dismissedLossKeys?: Set<string>;
+  /** Called when the coach toggles a fault as (in)significant. Receives the
+   *  fault shot and whether it should now be dismissed. */
+  onToggleDismissFault?: (shot: RallyShot, dismissed: boolean) => void;
 }
 
 /** Colors for shot type badges. */
@@ -54,15 +61,15 @@ const SHOT_COLORS: Record<string, string> = {
   serve: "#e8710a",
   return: "#0d904f",
   third: "#9334e6",
-  drive: "#ef5350",
+  drive: "#5e35b1",
   dink: "#4caf50",
   drop: "#29b6f6",
   lob: "#fdd835",
-  smash: "#d93025",
+  smash: "#303f9f",
   volley: "#7e57c2",
   reset: "#00bcd4",
-  speedup: "#ff5722",
-  putaway: "#b71c1c",
+  speedup: "#ef6c00",
+  putaway: "#455a64",
   poach: "#6a1b9a",
   passing: "#3949ab",
   shot: "#757575",
@@ -90,6 +97,8 @@ export default function ShotSequence({
   onToggleFlag,
   savedSequenceShotIds,
   faultShotIds,
+  dismissedLossKeys,
+  onToggleDismissFault,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
   const activeShot = activeShotId ? shots.find((s) => s.id === activeShotId) : null;
@@ -296,19 +305,18 @@ export default function ShotSequence({
             const isActive = shot.id === activeShotId;
             const inSavedSequence = savedSequenceShotIds?.has(shot.id) ?? false;
             const isFault = faultShotIds?.has(shot.id) ?? false;
+            const lossKey = `loss:${shot.rally_id}:${shot.id}`;
+            const faultDismissed = isFault && (dismissedLossKeys?.has(lossKey) ?? false);
             const color = SHOT_COLORS[shot.shot_type ?? "shot"] ?? SHOT_COLORS.shot;
 
-            // Highlight hierarchy: active > playing > fault (red) > saved
-            // sequence (yellow) > none. Fault wins over saved sequence because
-            // it's a fact about the rally, not coach-attached metadata.
+            // Active/playing use soft background tints (transient state).
+            // Fault + saved-sequence membership are conveyed by the left
+            // border stripe + a small right-side badge instead of a
+            // full-row tint — keeps the list calm while reviewing.
             const bgColor = isActive
               ? "#f0f4ff"
               : isPlaying
               ? "#e8f0fe"
-              : isFault && !buildMode
-              ? "#ffeaea"
-              : inSavedSequence && !buildMode
-              ? "#fff9e0"
               : "#fff";
 
             return (
@@ -328,7 +336,7 @@ export default function ShotSequence({
                   alignItems: "center",
                   gap: 10,
                   width: "100%",
-                  padding: "8px 40px 8px 14px",
+                  padding: `8px ${isFault && !buildMode && onToggleDismissFault ? 170 : 40}px 8px 14px`,
                   fontSize: 13,
                   background: buildMode && draftShotIds.has(shot.id)
                     ? "#fff3cd"
@@ -339,12 +347,12 @@ export default function ShotSequence({
                     ? "3px solid #f59e0b"
                     : isActive
                     ? `3px solid #1a73e8`
-                    : isPlaying
-                    ? `3px solid #4caf50`
                     : isFault && !buildMode
-                    ? "3px solid #ef4444"
+                    ? faultDismissed
+                      ? "3px solid #e5e5e5"
+                      : "3px solid #ef4444"
                     : inSavedSequence && !buildMode
-                    ? "3px solid #f0d169"
+                    ? "3px solid #7c3aed"
                     : `3px solid transparent`,
                   borderRight: "none",
                   cursor: "pointer",
@@ -452,21 +460,21 @@ export default function ShotSequence({
                   <div>{formatMs(shot.start_ms)}</div>
                 </span>
 
-                {/* Final shot marker */}
-                {shot.is_final && (
+                {inSavedSequence && !buildMode && (
                   <span
+                    title="Part of a saved sequence"
                     style={{
                       flexShrink: 0,
                       fontSize: 10,
-                      padding: "1px 6px",
-                      background: "#fff3cd",
-                      color: "#856404",
+                      fontWeight: 700,
+                      color: "#7c3aed",
+                      background: "#7c3aed18",
+                      padding: "1px 5px",
                       borderRadius: 3,
-                      fontWeight: 600,
+                      lineHeight: 1,
                     }}
-                    title="Rally-ending shot"
                   >
-                    END
+                    ▤
                   </span>
                 )}
 
@@ -510,6 +518,40 @@ export default function ShotSequence({
                   }}
                 >
                   {flaggedShotIds.has(shot.id) ? "🚩" : "⚑"}
+                </button>
+              )}
+              {/* Fault-dismiss toggle — only for rally-ending fault shots */}
+              {!buildMode && isFault && onToggleDismissFault && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleDismissFault(shot, !faultDismissed);
+                  }}
+                  title={
+                    faultDismissed
+                      ? "Restore — count this loss in the review checklist again"
+                      : "Mark insignificant — hide this loss from the review checklist"
+                  }
+                  style={{
+                    position: "absolute",
+                    right: 40,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    fontSize: 10,
+                    fontWeight: 600,
+                    padding: "3px 8px",
+                    borderRadius: 4,
+                    background: faultDismissed ? "#f4f4f5" : "#fff",
+                    border: `1px solid ${faultDismissed ? "#d4d4d8" : "#fca5a5"}`,
+                    color: faultDismissed ? "#71717a" : "#b91c1c",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    lineHeight: 1,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {faultDismissed ? "✓ Not significant" : "Not significant"}
                 </button>
               )}
               </div>

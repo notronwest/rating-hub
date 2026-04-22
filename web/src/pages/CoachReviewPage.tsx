@@ -42,7 +42,7 @@ import VideoPlayer, { type VideoPlayerHandle } from "../components/analyze/Video
 import VideoUrlInput from "../components/analyze/VideoUrlInput";
 import ShotTooltip from "../components/analyze/ShotTooltip";
 import FptmEditor from "../components/analyze/FptmEditor";
-import GameWorkspaceHeader from "../components/analyze/GameWorkspaceHeader";
+import GameHeader from "../components/GameHeader";
 import PatternsToolbar from "../components/patterns/PatternsToolbar";
 import { summarizeFptm, type FptmValue } from "../lib/fptm";
 
@@ -633,36 +633,87 @@ export default function CoachReviewPage() {
 
   return (
     <div style={{ maxWidth: 1400 }}>
-      <GameWorkspaceHeader
+      <GameHeader
         orgId={orgId ?? ""}
         gameId={gameId ?? ""}
         mode="review"
-        title={game.session_name || game.pbvision_video_id}
-        right={
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <label style={{ fontSize: 12, color: "#666" }}>Player:</label>
-            <select
-              value={playerIdParam}
-              onChange={(e) => handlePickPlayer(e.target.value)}
+        // On review, clicking a player chip drills into that player's review
+        // (instead of leaving the review to their detail page).
+        onPlayerClick={(playerId) => handlePickPlayer(playerId)}
+        drill={
+          selectedPlayer ? (
+            <div
               style={{
-                padding: "6px 10px",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "6px 10px 6px 6px",
+                background: "#7c3aed12",
+                border: "1px solid #d8c8ff",
+                borderRadius: 999,
                 fontSize: 13,
-                borderRadius: 6,
-                border: "1px solid #ddd",
-                outline: "none",
-                fontFamily: "inherit",
+                color: "#333",
               }}
             >
-              <option value="">— Select player —</option>
-              {[...players]
-                .sort((a, b) => a.player_index - b.player_index)
-                .map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.display_name} (T{p.team})
-                  </option>
-                ))}
-            </select>
-          </div>
+              {selectedPlayer.avatar_url ? (
+                <img
+                  src={selectedPlayer.avatar_url}
+                  alt=""
+                  style={{
+                    width: 26,
+                    height: 26,
+                    borderRadius: "50%",
+                    objectFit: "cover",
+                  }}
+                />
+              ) : (
+                <span
+                  style={{
+                    width: 26,
+                    height: 26,
+                    borderRadius: "50%",
+                    background: "#7c3aed",
+                    color: "#fff",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 11,
+                    fontWeight: 700,
+                  }}
+                >
+                  {selectedPlayer.display_name
+                    .split(" ")
+                    .map((s) => s[0])
+                    .slice(0, 2)
+                    .join("")
+                    .toUpperCase()}
+                </span>
+              )}
+              <span style={{ fontSize: 11, fontWeight: 700, color: "#7c3aed", textTransform: "uppercase", letterSpacing: 0.5 }}>
+                Reviewing
+              </span>
+              <span style={{ fontWeight: 600 }}>{selectedPlayer.display_name}</span>
+              <button
+                type="button"
+                onClick={() => handlePickPlayer("")}
+                title="Back to review overview"
+                style={{
+                  marginLeft: 4,
+                  width: 22,
+                  height: 22,
+                  borderRadius: "50%",
+                  background: "#fff",
+                  border: "1px solid #d8c8ff",
+                  color: "#7c3aed",
+                  cursor: "pointer",
+                  fontSize: 12,
+                  fontFamily: "inherit",
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          ) : null
         }
       />
 
@@ -955,61 +1006,6 @@ export default function CoachReviewPage() {
                       </button>
                     </div>
                   )}
-                  {/* Inline shot chain */}
-                  <div
-                    style={{
-                      display: "flex",
-                      flexWrap: "wrap",
-                      gap: 6,
-                      marginTop: 10,
-                    }}
-                  >
-                    {seqShots.map((s, i) => {
-                      const p = players.find((pp) => pp.player_index === s.player_index);
-                      const isError = s.id === currentLoss.attributedShotId;
-                      return (
-                        <div
-                          key={s.id}
-                          onClick={() => videoRef.current?.seek(s.start_ms)}
-                          style={{
-                            padding: "6px 10px",
-                            background: isError ? "#fce8e6" : "#f0f0f0",
-                            borderRadius: 6,
-                            fontSize: 12,
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 6,
-                            cursor: "pointer",
-                            borderLeft: isError ? "3px solid #c62828" : "3px solid transparent",
-                          }}
-                          title="Click to seek to this shot"
-                        >
-                          <span
-                            style={{
-                              width: 16,
-                              height: 16,
-                              borderRadius: "50%",
-                              background: isError ? "#c62828" : "#aaa",
-                              color: "#fff",
-                              fontSize: 10,
-                              fontWeight: 600,
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                            }}
-                          >
-                            {i + 1}
-                          </span>
-                          <span style={{ fontWeight: 500, color: "#333" }}>
-                            {s.shot_type ?? "shot"}
-                          </span>
-                          <span style={{ color: "#888" }}>
-                            · {p?.display_name.split(" ")[0] ?? `p${s.player_index}`}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
                 </div>
 
                 {/* Notes */}

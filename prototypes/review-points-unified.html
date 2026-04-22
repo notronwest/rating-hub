@@ -1,0 +1,670 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Review points — unified model</title>
+  <style>
+    :root {
+      --ink: #333;
+      --muted: #666;
+      --faint: #999;
+      --bg: #f7f7f8;
+      --line: #e2e2e2;
+      --line-soft: #f0f0f0;
+      --blue: #1a73e8;
+      --blue-bg: #e8f0fe;
+      --purple: #7c3aed;
+      --purple-bg: #f5f0ff;
+      --amber: #f59e0b;
+      --amber-bg: #fff8e1;
+      --red: #ef4444;
+      --red-bg: #fdebea;
+      --green: #22c55e;
+      --grey: #8b93a1;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, -apple-system, Segoe UI, sans-serif; }
+    body { padding: 24px 32px 80px; }
+    .wrap { max-width: 1000px; margin: 0 auto; }
+    h1 { font-size: 18px; margin: 0 0 6px; }
+    h2 {
+      font-size: 12px; margin: 32px 0 12px; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.8px;
+      padding-bottom: 6px; border-bottom: 2px solid var(--line);
+    }
+    .sh { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin: 20px 0 6px; }
+    .note { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+    .arrow { color: var(--blue); }
+
+    .thesis {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin-bottom: 20px;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    .thesis b { color: var(--ink); }
+    .thesis code {
+      background: #f4f4f5;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 12px;
+    }
+
+    .video-placeholder {
+      height: 96px;
+      background: #1a1a1a;
+      border-radius: 10px;
+      color: #555;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      margin-bottom: 14px;
+    }
+
+    /* ── Panel ── */
+    .panel {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+
+    /* ── List item (shared) ── */
+    .item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--line-soft);
+      font-size: 13px;
+    }
+    .item:last-child { border-bottom: none; }
+    .item.needs::before {
+      content: "";
+      position: absolute;
+    }
+    .item-wrap {
+      position: relative;
+      border-left: 3px solid transparent;
+    }
+    .item-wrap.needs { border-left-color: var(--blue); }
+    .item-wrap.reviewed { border-left-color: transparent; background: #fcfcfd; }
+    .item-wrap.dismissed { opacity: 0.55; }
+
+    .ts {
+      padding: 3px 8px;
+      background: var(--blue-bg);
+      color: var(--blue);
+      border: 1px solid #c6dafc;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      flex-shrink: 0;
+      cursor: pointer;
+    }
+    .type {
+      padding: 2px 8px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      border-radius: 4px;
+      min-width: 48px;
+      text-align: center;
+    }
+    .t-drive { background: #5e35b122; color: #5e35b1; }
+    .t-smash { background: #303f9f22; color: #303f9f; }
+    .t-drop  { background: #29b6f622; color: #29b6f6; }
+    .t-dink  { background: #4caf5022; color: #4caf50; }
+
+    .meta {
+      flex: 1;
+      min-width: 0;
+    }
+    .meta .head { font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .meta .quote { font-size: 12px; color: var(--muted); font-style: italic; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* Source glyph — tiny, at left of player name */
+    .src {
+      display: inline-flex;
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      align-items: center; justify-content: center;
+      font-size: 11px;
+      flex-shrink: 0;
+    }
+    .src-coach { background: #fff3cd; color: #856404; }
+    .src-auto  { background: #fdebea; color: #b91c1c; }
+
+    /* Meta chips */
+    .chip {
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+    }
+    .c-ctx  { background: var(--purple-bg); color: var(--purple); }
+    .c-fptm { background: #f4f4f5; color: var(--muted); }
+    .c-drill { background: #e6f4ea; color: #1e7e34; }
+    .c-reviewed { background: #e6f4ea; color: #1e7e34; }
+    .c-untouched { background: #f4f4f5; color: var(--faint); }
+
+    .actions {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+    .btn {
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 4px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--muted);
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .btn-ghost { border-color: transparent; background: transparent; }
+    .btn-sm { padding: 2px 8px; font-size: 10px; }
+
+    /* Counts header for variant C */
+    .counts {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--line);
+      background: #fafbff;
+    }
+    .counts .k {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .counts .n { font-size: 14px; font-weight: 700; color: var(--ink); margin-right: 3px; }
+    .counts .divider { width: 1px; background: var(--line); height: 20px; }
+
+    /* Filter chips */
+    .chiprow {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--line);
+      background: #fafafa;
+    }
+    .fchip {
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 999px;
+      background: #fff;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      cursor: pointer;
+      font-family: inherit;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .fchip.active {
+      color: var(--blue);
+      background: var(--blue-bg);
+      border-color: #c6dafc;
+    }
+    .fchip .tag {
+      padding: 0px 5px;
+      font-size: 9px;
+      background: #f4f4f5;
+      border-radius: 999px;
+      color: var(--muted);
+    }
+    .fchip.active .tag { background: #fff; color: var(--blue); }
+
+    /* Group header */
+    .grp {
+      padding: 8px 14px;
+      background: #fafafa;
+      border-bottom: 1px solid var(--line);
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .grp .n { padding: 1px 7px; font-size: 10px; background: #eceff3; color: var(--muted); border-radius: 999px; }
+
+    /* Expanded detail */
+    .expanded {
+      padding: 12px 14px 14px;
+      background: #fafbff;
+      border-top: 1px solid var(--line-soft);
+    }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-bottom: 10px;
+    }
+    .field label {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .field textarea, .field input {
+      padding: 6px 8px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      font-family: inherit;
+      font-size: 13px;
+      background: #fff;
+      resize: vertical;
+    }
+    .fptm { display: flex; gap: 4px; }
+    .fptm-pill {
+      padding: 3px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 5px;
+      border: 1px solid var(--line);
+      background: #fff;
+      cursor: pointer;
+      color: var(--muted);
+    }
+    .fptm-pill.active {
+      background: var(--purple-bg);
+      border-color: #d8c8ff;
+      color: var(--purple);
+    }
+    .ctx-ctrl {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 4px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .ctx-ctrl .stepper {
+      display: inline-flex;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .ctx-ctrl .stepper button {
+      background: #fff;
+      border: none;
+      padding: 3px 8px;
+      font-size: 12px;
+      cursor: pointer;
+      color: var(--muted);
+      font-family: inherit;
+    }
+    .ctx-ctrl .stepper .sep { padding: 0; border-left: 1px solid var(--line); }
+
+    .size-label {
+      display: inline-block;
+      padding: 2px 8px;
+      background: #1a1a1a;
+      color: #fff;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      margin-bottom: 6px;
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Review points — unified model</h1>
+
+  <div class="thesis">
+    <b>Thesis:</b> sequences, flags, and faults are really <i>the same thing</i> — a shot worth reviewing,
+    with optional context and optional coach metadata. The difference between them is just variation on
+    two axes:
+    <ul style="margin:8px 0 0 18px; padding:0;">
+      <li><b>Origin</b> — did a coach flag it (<code>⚑</code>), or did the system auto-detect a fault (<code>●</code>)?</li>
+      <li><b>Size</b> — is it a single shot, or a context window of shots around it?</li>
+    </ul>
+    <div style="margin-top:10px;">
+      So one list, one row, one edit panel. Origin is a small glyph, size is a small chip. Everything else
+      is the coach's work on top.
+    </div>
+  </div>
+
+  <div class="video-placeholder">· video would be here ·</div>
+
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+  <h2>Variant A · One chronological list (simplest)</h2>
+  <p class="note">All review points in one list, ordered by video time. Source is a tiny glyph; context size is a small chip. No tabs, no categories.</p>
+
+  <div class="panel">
+    <div class="counts">
+      <span><span class="n">8</span><span class="k">review points</span></span>
+      <span class="divider"></span>
+      <span style="font-size:12px; color:var(--muted);">
+        <span class="c-reviewed chip" style="margin-right:4px;">3 reviewed</span>
+        <span class="c-untouched chip">5 untouched</span>
+      </span>
+    </div>
+
+    <div class="item-wrap needs">
+      <div class="item">
+        <span class="ts">0:20 ▶</span>
+        <span class="type t-drive">drive</span>
+        <div class="meta">
+          <div class="head">
+            <span class="src src-auto" title="Auto-detected fault">●</span>
+            Jelena · rally 2
+          </div>
+        </div>
+        <div class="actions"><button class="btn btn-sm">Review</button></div>
+      </div>
+    </div>
+
+    <div class="item-wrap reviewed">
+      <div class="item">
+        <span class="ts">0:45 ▶</span>
+        <span class="type t-smash">smash</span>
+        <div class="meta">
+          <div class="head">
+            <span class="src src-coach" title="Coach-flagged">⚑</span>
+            Celeste · rally 4
+            <span class="chip c-fptm">F · P</span>
+            <span class="chip c-drill">drill</span>
+          </div>
+          <div class="quote">"Good setup but put away left — check footwork"</div>
+        </div>
+        <div class="actions"><button class="btn btn-sm">Open</button></div>
+      </div>
+    </div>
+
+    <div class="item-wrap needs">
+      <div class="item">
+        <span class="ts">1:08 ▶</span>
+        <span class="type t-dink">dink</span>
+        <div class="meta">
+          <div class="head">
+            <span class="src src-auto">●</span>
+            Ron · rally 5
+          </div>
+        </div>
+        <div class="actions"><button class="btn btn-sm">Review</button></div>
+      </div>
+    </div>
+
+    <div class="item-wrap reviewed">
+      <div class="item">
+        <span class="ts">1:42 ▶</span>
+        <span class="type t-dink">dink</span>
+        <div class="meta">
+          <div class="head">
+            <span class="src src-coach">⚑</span>
+            Ron · rally 6
+            <span class="chip c-ctx">▤ 4 shots</span>
+            <span class="chip c-fptm">P · T</span>
+          </div>
+          <div class="quote">"Attackable dink to middle — better positioning"</div>
+        </div>
+        <div class="actions"><button class="btn btn-sm">Open</button></div>
+      </div>
+    </div>
+
+    <div class="item-wrap dismissed">
+      <div class="item">
+        <span class="ts">2:14 ▶</span>
+        <span class="type t-smash">smash</span>
+        <div class="meta">
+          <div class="head">
+            <span class="src src-auto">●</span>
+            Geoff · rally 8
+            <span class="chip c-untouched">dismissed</span>
+          </div>
+        </div>
+        <div class="actions"><button class="btn btn-sm">Restore</button></div>
+      </div>
+    </div>
+  </div>
+  <p class="note" style="margin-top:4px;">
+    The <span style="color:var(--blue); font-weight:600;">left blue stripe</span> is the only decoration — signaling "this one needs review" (no diagnosis yet). Reviewed items are calm. Dismissed items fade.
+  </p>
+
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+  <h2>Variant B · Filter chips above one list</h2>
+  <p class="note">Same list, but the row above can filter by status / origin when you want to narrow down.</p>
+
+  <div class="panel">
+    <div class="counts">
+      <span><span class="n">8</span><span class="k">review points</span></span>
+      <span class="divider"></span>
+      <span class="k">3 reviewed · 5 untouched</span>
+    </div>
+    <div class="chiprow">
+      <span class="k" style="margin-right:2px;">Filter:</span>
+      <button class="fchip active">All <span class="tag">8</span></button>
+      <button class="fchip">Needs review <span class="tag">5</span></button>
+      <button class="fchip">⚑ Coach <span class="tag">3</span></button>
+      <button class="fchip">● Auto <span class="tag">5</span></button>
+      <button class="fchip">With drill <span class="tag">2</span></button>
+    </div>
+
+    <div class="item-wrap needs">
+      <div class="item">
+        <span class="ts">0:20 ▶</span>
+        <span class="type t-drive">drive</span>
+        <div class="meta">
+          <div class="head"><span class="src src-auto">●</span> Jelena · rally 2</div>
+        </div>
+        <div class="actions"><button class="btn btn-sm">Review</button></div>
+      </div>
+    </div>
+    <div class="item-wrap reviewed">
+      <div class="item">
+        <span class="ts">0:45 ▶</span>
+        <span class="type t-smash">smash</span>
+        <div class="meta">
+          <div class="head">
+            <span class="src src-coach">⚑</span> Celeste · rally 4
+            <span class="chip c-fptm">F · P</span>
+            <span class="chip c-drill">drill</span>
+          </div>
+          <div class="quote">"Good setup but put away left — check footwork"</div>
+        </div>
+        <div class="actions"><button class="btn btn-sm">Open</button></div>
+      </div>
+    </div>
+    <div class="item-wrap reviewed">
+      <div class="item">
+        <span class="ts">1:42 ▶</span>
+        <span class="type t-dink">dink</span>
+        <div class="meta">
+          <div class="head">
+            <span class="src src-coach">⚑</span> Ron · rally 6
+            <span class="chip c-ctx">▤ 4 shots</span>
+            <span class="chip c-fptm">P · T</span>
+          </div>
+          <div class="quote">"Attackable dink to middle — better positioning"</div>
+        </div>
+        <div class="actions"><button class="btn btn-sm">Open</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+  <h2>Variant C · Grouped by status (what's left to do)</h2>
+  <p class="note">Organized around coach workflow, not data type. "Needs review" bubbles to the top; already-reviewed items are one section down.</p>
+
+  <div class="panel">
+    <div class="counts">
+      <span><span class="n">8</span><span class="k">review points</span></span>
+      <span class="divider"></span>
+      <span class="k">5 untouched · 3 reviewed</span>
+    </div>
+
+    <div class="grp">
+      <span>🎯 Needs review</span>
+      <span class="n">5</span>
+    </div>
+    <div class="item-wrap needs">
+      <div class="item">
+        <span class="ts">0:20 ▶</span>
+        <span class="type t-drive">drive</span>
+        <div class="meta">
+          <div class="head"><span class="src src-auto">●</span> Jelena · rally 2</div>
+        </div>
+        <div class="actions"><button class="btn btn-sm">Review</button></div>
+      </div>
+    </div>
+    <div class="item-wrap needs">
+      <div class="item">
+        <span class="ts">1:08 ▶</span>
+        <span class="type t-dink">dink</span>
+        <div class="meta">
+          <div class="head"><span class="src src-auto">●</span> Ron · rally 5</div>
+        </div>
+        <div class="actions"><button class="btn btn-sm">Review</button></div>
+      </div>
+    </div>
+
+    <div class="grp">
+      <span>✓ Reviewed</span>
+      <span class="n">3</span>
+    </div>
+    <div class="item-wrap reviewed">
+      <div class="item">
+        <span class="ts">0:45 ▶</span>
+        <span class="type t-smash">smash</span>
+        <div class="meta">
+          <div class="head">
+            <span class="src src-coach">⚑</span> Celeste · rally 4
+            <span class="chip c-fptm">F · P</span>
+            <span class="chip c-drill">drill</span>
+          </div>
+          <div class="quote">"Good setup but put away left"</div>
+        </div>
+        <div class="actions"><button class="btn btn-sm">Open</button></div>
+      </div>
+    </div>
+    <div class="item-wrap reviewed">
+      <div class="item">
+        <span class="ts">1:42 ▶</span>
+        <span class="type t-dink">dink</span>
+        <div class="meta">
+          <div class="head">
+            <span class="src src-coach">⚑</span> Ron · rally 6
+            <span class="chip c-ctx">▤ 4 shots</span>
+          </div>
+          <div class="quote">"Attackable dink to middle"</div>
+        </div>
+        <div class="actions"><button class="btn btn-sm">Open</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+  <h2>Unified detail / edit panel</h2>
+  <p class="note">Same form regardless of origin. <b>Context size</b> is a first-class control (±shots) so a 1-shot flag can grow into a sequence, and a fault can pull in setup shots.</p>
+
+  <div class="panel">
+    <div class="counts">
+      <span><span class="n">8</span><span class="k">review points</span></span>
+      <span class="divider"></span>
+      <span class="k">3 reviewed · 5 untouched</span>
+    </div>
+    <div class="expanded">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+        <span class="ts">0:45 ▶</span>
+        <span class="type t-smash">smash</span>
+        <span style="font-size:13px; font-weight:600;">Celeste · rally 4 · shot 7</span>
+        <span class="chip c-fptm" style="margin-left:6px;">⚑ coach-flagged</span>
+        <span style="flex:1"></span>
+        <button class="btn btn-sm">Delete</button>
+      </div>
+
+      <div class="field">
+        <label>Context window <span style="color:var(--muted); font-weight:400; text-transform:none; letter-spacing:0;">— include shots around the anchor</span></label>
+        <div class="ctx-ctrl">
+          <span>Before:</span>
+          <span class="stepper"><button>−</button><button class="sep" style="color:var(--ink); font-weight:700;">0</button><button>+</button></span>
+          <span style="margin-left:12px;">After:</span>
+          <span class="stepper"><button>−</button><button class="sep" style="color:var(--ink); font-weight:700;">0</button><button>+</button></span>
+          <span style="margin-left:12px; font-size:11px; color:var(--faint);">Currently: <b>1 shot</b></span>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Note</label>
+        <textarea>Good setup but put away left — check footwork coming off the ball.</textarea>
+      </div>
+
+      <div class="field">
+        <label>FPTM diagnosis</label>
+        <div class="fptm">
+          <button class="fptm-pill active">F · Foot</button>
+          <button class="fptm-pill active">P · Position</button>
+          <button class="fptm-pill">T</button>
+          <button class="fptm-pill">M</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Drill</label>
+        <textarea placeholder="Optional — what to practice…"></textarea>
+      </div>
+
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:4px;">
+        <button class="btn btn-ghost">Cancel</button>
+        <button class="btn" style="color:#64748b;">Dismiss (not significant)</button>
+        <button class="btn" style="background:var(--blue); color:#fff; border-color:var(--blue);">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <p class="note" style="margin-top:10px;">
+    Same panel handles: promoting a flag to a sequence (bump "after" to +3), adding diagnosis to an
+    auto-detected fault (fill FPTM), or dismissing an irrelevant one. Nothing is a separate kind — just
+    different data on the same object.
+  </p>
+
+  <h2>Model summary</h2>
+  <div class="thesis">
+    <b>One table under the hood, probably <code>review_points</code>, with:</b>
+    <ul style="margin:8px 0 0 18px; padding:0;">
+      <li><code>anchor_shot_id</code> — always single</li>
+      <li><code>origin</code> — <code>"coach"</code> | <code>"auto_fault"</code></li>
+      <li><code>context_before</code>, <code>context_after</code> — window size (0/0 for a bare flag, 3/3 for a typical sequence)</li>
+      <li><code>note</code>, <code>fptm</code>, <code>drill</code>, <code>dismissed</code> — coach metadata</li>
+    </ul>
+    <div style="margin-top:10px;">
+      Existing tables (<code>analysis_flagged_shots</code>, <code>game_analysis_sequences</code>,
+      and the <code>dismissed_loss_keys</code> concept) can stay — we just render them all through one
+      lens. Or we can migrate to a unified table later if it feels cleaner.
+    </div>
+  </div>
+
+  <h2>Which variant do you want?</h2>
+  <ul style="color:var(--muted); font-size:13px;">
+    <li><b>A</b> — one flat list, simplest</li>
+    <li><b>B</b> — one list + filter chips (good if there are many items)</li>
+    <li><b>C</b> — grouped by "Needs review" vs "Reviewed" (workflow-first)</li>
+  </ul>
+</div>
+</body>
+</html>

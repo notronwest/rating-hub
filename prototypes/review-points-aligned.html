@@ -1,0 +1,546 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Review points — aligned columns · 3 variants</title>
+  <style>
+    :root {
+      --ink: #333;
+      --muted: #666;
+      --faint: #999;
+      --bg: #f7f7f8;
+      --line: #e2e2e2;
+      --line-soft: #f0f0f0;
+      --blue: #1a73e8;
+      --blue-bg: #e8f0fe;
+      --purple: #7c3aed;
+      --purple-bg: #f5f0ff;
+      --amber: #f59e0b;
+      --amber-bg: #fff8e1;
+      --red: #ef4444;
+      --red-bg: #fdebea;
+      --green: #22c55e;
+      --grey: #8b93a1;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, -apple-system, Segoe UI, sans-serif; }
+    body { padding: 24px 32px 80px; }
+    .wrap { max-width: 1000px; margin: 0 auto; }
+    h1 { font-size: 18px; margin: 0 0 6px; }
+    h2 { font-size: 12px; margin: 32px 0 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; padding-bottom: 6px; border-bottom: 2px solid var(--line); }
+    .sh { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin: 20px 0 6px; }
+    .note { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+
+    .video-placeholder {
+      height: 96px; background: #1a1a1a; border-radius: 10px; color: #555;
+      display: flex; align-items: center; justify-content: center; font-size: 11px; margin-bottom: 14px;
+    }
+
+    .panel {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+      margin-bottom: 10px;
+    }
+
+    .counts {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--line);
+      background: #fafbff;
+    }
+    .counts .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
+    .counts .n { font-size: 14px; font-weight: 700; color: var(--ink); margin-right: 3px; }
+    .counts .divider { width: 1px; background: var(--line); height: 20px; }
+
+    .chiprow {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--line);
+      background: #fafafa;
+    }
+    .fchip {
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 999px;
+      background: #fff;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      cursor: pointer;
+      font-family: inherit;
+      display: inline-flex; align-items: center; gap: 4px;
+    }
+    .fchip.active { color: var(--blue); background: var(--blue-bg); border-color: #c6dafc; }
+    .fchip .tag { padding: 0 5px; font-size: 9px; background: #f4f4f5; border-radius: 999px; color: var(--muted); }
+    .fchip.active .tag { background: #fff; color: var(--blue); }
+
+    .btn {
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 4px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--muted);
+      cursor: pointer;
+      font-family: inherit;
+      white-space: nowrap;
+    }
+    .btn-primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+
+    /* ═════════════════════════════════════════════════════════════════════ */
+    /* Variant D — strict table-style columns, time+type muted/small        */
+    /* ═════════════════════════════════════════════════════════════════════ */
+    .vD .row {
+      display: grid;
+      grid-template-columns:
+        20px        /* origin glyph */
+        44px        /* time */
+        58px        /* shot type */
+        1fr         /* player + note */
+        68px        /* context size chip */
+        64px        /* drill chip */
+        78px;       /* action */
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--line-soft);
+      font-size: 13px;
+    }
+    .vD .row:last-child { border-bottom: none; }
+    .vD .row.reviewed { background: #fcfcfd; }
+    .vD .row.needs { box-shadow: inset 3px 0 0 var(--blue); }
+    .vD .src {
+      display: inline-flex; width: 18px; height: 18px; border-radius: 50%;
+      align-items: center; justify-content: center; font-size: 10px; font-weight: 700;
+    }
+    .vD .src-coach { background: #fff3cd; color: #856404; }
+    .vD .src-auto { background: #fdebea; color: #b91c1c; }
+    .vD .time {
+      font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums;
+      text-align: right;
+    }
+    .vD .type {
+      font-size: 10px; color: var(--faint);
+      text-transform: uppercase; letter-spacing: 0.4px;
+    }
+    .vD .primary {
+      min-width: 0;
+    }
+    .vD .primary .who {
+      font-weight: 600; color: var(--ink); font-size: 13px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .vD .primary .rally { font-size: 11px; color: var(--faint); margin-left: 4px; }
+    .vD .primary .note {
+      font-size: 12px; color: var(--muted);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px;
+    }
+    .vD .chip-slot { min-height: 18px; }
+    .vD .chip {
+      padding: 1px 6px; border-radius: 3px;
+      font-size: 10px; font-weight: 700;
+      letter-spacing: 0.3px; text-transform: uppercase;
+    }
+    .vD .c-ctx { background: var(--purple-bg); color: var(--purple); }
+    .vD .c-drill { background: #e6f4ea; color: #1e7e34; }
+
+    /* ═════════════════════════════════════════════════════════════════════ */
+    /* Variant E — two-line row, left rail glyph, right rail action         */
+    /* ═════════════════════════════════════════════════════════════════════ */
+    .vE .row {
+      display: grid;
+      grid-template-columns: 26px 1fr 90px;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--line-soft);
+    }
+    .vE .row:last-child { border-bottom: none; }
+    .vE .row.needs { box-shadow: inset 3px 0 0 var(--blue); }
+    .vE .src {
+      width: 22px; height: 22px; border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700;
+    }
+    .vE .src-coach { background: #fff3cd; color: #856404; }
+    .vE .src-auto { background: #fdebea; color: #b91c1c; }
+    .vE .primary { min-width: 0; }
+    .vE .primary .topline {
+      display: flex; gap: 8px; align-items: center;
+      font-size: 13px; color: var(--ink); font-weight: 600;
+    }
+    .vE .primary .note {
+      font-size: 12px; color: var(--muted); margin-top: 2px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .vE .primary .bottomline {
+      display: flex; gap: 10px; align-items: center;
+      font-size: 11px; color: var(--faint); margin-top: 3px;
+      font-variant-numeric: tabular-nums;
+    }
+    .vE .primary .bottomline .t-type {
+      color: var(--muted);
+    }
+    .vE .chip-row {
+      display: flex; gap: 4px; align-items: center;
+      min-height: 16px; /* reserved even when empty to keep alignment */
+    }
+    .vE .chip {
+      padding: 1px 6px; border-radius: 3px;
+      font-size: 10px; font-weight: 700;
+      letter-spacing: 0.3px; text-transform: uppercase;
+    }
+    .vE .c-ctx { background: var(--purple-bg); color: var(--purple); }
+    .vE .c-drill { background: #e6f4ea; color: #1e7e34; }
+
+    /* ═════════════════════════════════════════════════════════════════════ */
+    /* Variant F — prominent player row, meta footer, no shot-type tint      */
+    /* ═════════════════════════════════════════════════════════════════════ */
+    .vF .row {
+      display: grid;
+      grid-template-columns: 22px 1fr auto 80px;
+      align-items: center;
+      gap: 12px;
+      padding: 11px 14px;
+      border-bottom: 1px solid var(--line-soft);
+    }
+    .vF .row:last-child { border-bottom: none; }
+    .vF .row.needs .who::before {
+      content: "●";
+      color: var(--blue); margin-right: 6px; font-size: 9px; vertical-align: 3px;
+    }
+    .vF .src {
+      width: 18px; height: 18px; border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 10px;
+    }
+    .vF .src-coach { background: #fff3cd; color: #856404; }
+    .vF .src-auto { background: #fdebea; color: #b91c1c; }
+    .vF .primary { min-width: 0; }
+    .vF .who {
+      font-size: 14px; font-weight: 600; color: var(--ink);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .vF .note {
+      font-size: 12px; color: var(--muted); margin-top: 2px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .vF .when {
+      font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums;
+      text-align: right; white-space: nowrap;
+      min-width: 140px;  /* fixed so time-free rows don't shift */
+    }
+    .vF .when .shot {
+      color: var(--muted);
+      text-transform: uppercase;
+      font-size: 9px; letter-spacing: 0.6px;
+      margin-right: 6px;
+    }
+    .vF .chips {
+      display: flex; gap: 4px;
+      min-height: 16px;
+      justify-content: flex-end;
+      margin-top: 3px;
+    }
+    .vF .chip {
+      padding: 1px 6px; border-radius: 3px;
+      font-size: 9px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase;
+    }
+    .vF .c-ctx { background: var(--purple-bg); color: var(--purple); }
+    .vF .c-drill { background: #e6f4ea; color: #1e7e34; }
+    .vF .dismissed { opacity: 0.55; }
+
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Review points — aligned columns, no FPTM, quieter time/shot type</h1>
+  <p class="note">
+    Three variants all use <b>fixed-width columns</b> so rows line up regardless of which chips or icons a given item has. Time + shot type are de-emphasized but still visible. FPTM is gone.
+  </p>
+
+  <div class="video-placeholder">· video would be here ·</div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <h2>Variant D · Strict table columns</h2>
+  <p class="note">
+    Seven fixed columns: origin · time · type · player/note · context chip slot · drill chip slot · action.
+    A missing chip just leaves its column empty — next column still aligned.
+  </p>
+
+  <div class="panel vD">
+    <div class="counts">
+      <span><span class="n">8</span><span class="k">review points</span></span>
+      <span class="divider"></span>
+      <span class="k">3 reviewed · 5 untouched</span>
+    </div>
+    <div class="chiprow">
+      <span class="k" style="margin-right:2px;">Filter:</span>
+      <button class="fchip active">All <span class="tag">8</span></button>
+      <button class="fchip">Needs review <span class="tag">5</span></button>
+      <button class="fchip">⚑ Coach <span class="tag">3</span></button>
+      <button class="fchip">● Auto <span class="tag">5</span></button>
+      <button class="fchip">With drill <span class="tag">2</span></button>
+    </div>
+
+    <div class="row needs">
+      <span class="src src-auto">●</span>
+      <span class="time">0:20</span>
+      <span class="type">drive</span>
+      <div class="primary">
+        <div class="who">Jelena <span class="rally">· rally 2</span></div>
+      </div>
+      <div class="chip-slot"></div>
+      <div class="chip-slot"></div>
+      <button class="btn">Review</button>
+    </div>
+
+    <div class="row reviewed">
+      <span class="src src-coach">⚑</span>
+      <span class="time">0:45</span>
+      <span class="type">smash</span>
+      <div class="primary">
+        <div class="who">Celeste <span class="rally">· rally 4</span></div>
+        <div class="note">Good setup but put away left — check footwork coming off the ball.</div>
+      </div>
+      <div class="chip-slot"></div>
+      <div class="chip-slot"><span class="chip c-drill">drill</span></div>
+      <button class="btn">Open</button>
+    </div>
+
+    <div class="row needs">
+      <span class="src src-auto">●</span>
+      <span class="time">1:08</span>
+      <span class="type">dink</span>
+      <div class="primary">
+        <div class="who">Ron <span class="rally">· rally 5</span></div>
+      </div>
+      <div class="chip-slot"></div>
+      <div class="chip-slot"></div>
+      <button class="btn">Review</button>
+    </div>
+
+    <div class="row reviewed">
+      <span class="src src-coach">⚑</span>
+      <span class="time">1:42</span>
+      <span class="type">dink</span>
+      <div class="primary">
+        <div class="who">Ron <span class="rally">· rally 6</span></div>
+        <div class="note">Attackable dink to middle — better positioning on return.</div>
+      </div>
+      <div class="chip-slot"><span class="chip c-ctx">▤ 4 shots</span></div>
+      <div class="chip-slot"></div>
+      <button class="btn">Open</button>
+    </div>
+
+    <div class="row reviewed">
+      <span class="src src-coach">⚑</span>
+      <span class="time">2:03</span>
+      <span class="type">drive</span>
+      <div class="primary">
+        <div class="who">Geoff <span class="rally">· rally 7</span></div>
+        <div class="note">Late reaction → errant drive into the net tape.</div>
+      </div>
+      <div class="chip-slot"></div>
+      <div class="chip-slot"><span class="chip c-drill">drill</span></div>
+      <button class="btn">Open</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <h2>Variant E · Two-line row (player prominent, meta below)</h2>
+  <p class="note">
+    Player name is the headline. Time + shot type drop to a small footer under the note. Everything
+    else sits in two fixed rails: source on the left, action on the right.
+  </p>
+
+  <div class="panel vE">
+    <div class="counts">
+      <span><span class="n">8</span><span class="k">review points</span></span>
+      <span class="divider"></span>
+      <span class="k">3 reviewed · 5 untouched</span>
+    </div>
+    <div class="chiprow">
+      <span class="k" style="margin-right:2px;">Filter:</span>
+      <button class="fchip active">All <span class="tag">8</span></button>
+      <button class="fchip">Needs review <span class="tag">5</span></button>
+      <button class="fchip">⚑ Coach <span class="tag">3</span></button>
+      <button class="fchip">● Auto <span class="tag">5</span></button>
+      <button class="fchip">With drill <span class="tag">2</span></button>
+    </div>
+
+    <div class="row needs">
+      <span class="src src-auto">●</span>
+      <div class="primary">
+        <div class="topline">
+          <span>Jelena</span>
+          <div class="chip-row"></div>
+        </div>
+        <div class="bottomline">
+          <span>0:20</span>
+          <span class="t-type">drive</span>
+          <span>rally 2</span>
+        </div>
+      </div>
+      <button class="btn">Review</button>
+    </div>
+
+    <div class="row">
+      <span class="src src-coach">⚑</span>
+      <div class="primary">
+        <div class="topline">
+          <span>Celeste</span>
+          <div class="chip-row"><span class="chip c-drill">drill</span></div>
+        </div>
+        <div class="note">Good setup but put away left — check footwork coming off the ball.</div>
+        <div class="bottomline">
+          <span>0:45</span>
+          <span class="t-type">smash</span>
+          <span>rally 4</span>
+        </div>
+      </div>
+      <button class="btn">Open</button>
+    </div>
+
+    <div class="row needs">
+      <span class="src src-auto">●</span>
+      <div class="primary">
+        <div class="topline">
+          <span>Ron</span>
+          <div class="chip-row"></div>
+        </div>
+        <div class="bottomline">
+          <span>1:08</span>
+          <span class="t-type">dink</span>
+          <span>rally 5</span>
+        </div>
+      </div>
+      <button class="btn">Review</button>
+    </div>
+
+    <div class="row">
+      <span class="src src-coach">⚑</span>
+      <div class="primary">
+        <div class="topline">
+          <span>Ron</span>
+          <div class="chip-row"><span class="chip c-ctx">▤ 4 shots</span></div>
+        </div>
+        <div class="note">Attackable dink to middle — better positioning on return.</div>
+        <div class="bottomline">
+          <span>1:42</span>
+          <span class="t-type">dink</span>
+          <span>rally 6</span>
+        </div>
+      </div>
+      <button class="btn">Open</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <h2>Variant F · Player-first, meta in right rail</h2>
+  <p class="note">
+    Player + note is the centerpiece. A fixed-width right rail holds shot type + time + chips — so every
+    row reserves the same footprint on the right even when there are no chips.
+  </p>
+
+  <div class="panel vF">
+    <div class="counts">
+      <span><span class="n">8</span><span class="k">review points</span></span>
+      <span class="divider"></span>
+      <span class="k">3 reviewed · 5 untouched</span>
+    </div>
+    <div class="chiprow">
+      <span class="k" style="margin-right:2px;">Filter:</span>
+      <button class="fchip active">All <span class="tag">8</span></button>
+      <button class="fchip">Needs review <span class="tag">5</span></button>
+      <button class="fchip">⚑ Coach <span class="tag">3</span></button>
+      <button class="fchip">● Auto <span class="tag">5</span></button>
+      <button class="fchip">With drill <span class="tag">2</span></button>
+    </div>
+
+    <div class="row needs">
+      <span class="src src-auto">●</span>
+      <div class="primary">
+        <div class="who">Jelena · rally 2</div>
+      </div>
+      <div class="when">
+        <div><span class="shot">drive</span> 0:20</div>
+        <div class="chips"></div>
+      </div>
+      <button class="btn">Review</button>
+    </div>
+
+    <div class="row">
+      <span class="src src-coach">⚑</span>
+      <div class="primary">
+        <div class="who">Celeste · rally 4</div>
+        <div class="note">Good setup but put away left — check footwork coming off the ball.</div>
+      </div>
+      <div class="when">
+        <div><span class="shot">smash</span> 0:45</div>
+        <div class="chips"><span class="chip c-drill">drill</span></div>
+      </div>
+      <button class="btn">Open</button>
+    </div>
+
+    <div class="row needs">
+      <span class="src src-auto">●</span>
+      <div class="primary">
+        <div class="who">Ron · rally 5</div>
+      </div>
+      <div class="when">
+        <div><span class="shot">dink</span> 1:08</div>
+        <div class="chips"></div>
+      </div>
+      <button class="btn">Review</button>
+    </div>
+
+    <div class="row">
+      <span class="src src-coach">⚑</span>
+      <div class="primary">
+        <div class="who">Ron · rally 6</div>
+        <div class="note">Attackable dink to middle — better positioning on return.</div>
+      </div>
+      <div class="when">
+        <div><span class="shot">dink</span> 1:42</div>
+        <div class="chips"><span class="chip c-ctx">▤ 4 shots</span></div>
+      </div>
+      <button class="btn">Open</button>
+    </div>
+
+    <div class="row dismissed">
+      <span class="src src-auto">●</span>
+      <div class="primary">
+        <div class="who">Geoff · rally 8</div>
+        <div class="note" style="font-style:italic;">Dismissed — ace return by opponent</div>
+      </div>
+      <div class="when">
+        <div><span class="shot">smash</span> 2:14</div>
+        <div class="chips"></div>
+      </div>
+      <button class="btn">Restore</button>
+    </div>
+  </div>
+
+  <h2>Comparing the three</h2>
+  <ul style="color:var(--muted); font-size:13px;">
+    <li><b>D</b> — densest, most table-like. Every field has its own column. Best if you value scan-ability across many items.</li>
+    <li><b>E</b> — most "card-like". Player is the headline; time + type fade into a third line. Feels less tabular, more narrative.</li>
+    <li><b>F</b> — headline is player, but the right rail is a consistent "slip" showing shot type + time + chips. Middle ground between D's table and E's card.</li>
+  </ul>
+
+  <p class="note">
+    Pick one, plus tell me: should the <b>source glyph</b> (⚑ / ●) stay, move into the filter chips only, or
+    be baked into the player-name column? And the <b>reviewed/needs-review blue stripe</b> on the left —
+    keep, or drop in favor of just the chip/icons?
+  </p>
+</div>
+</body>
+</html>

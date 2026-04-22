@@ -320,16 +320,27 @@ function KitchenPlayerBar({
         fontSize: 11,
         color: "#555",
         whiteSpace: "nowrap",
+        width: 90,
+        flexShrink: 0,
+        flexDirection: align === "right" ? "row-reverse" : "row",
       }}
     >
       {player.avatar_url && (
         <img
           src={player.avatar_url}
           alt=""
-          style={{ width: 18, height: 18, borderRadius: "50%", objectFit: "cover" }}
+          style={{ width: 18, height: 18, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }}
         />
       )}
-      <span style={{ fontWeight: 500 }}>{player.display_name.split(" ")[0]}</span>
+      <span
+        style={{
+          fontWeight: 500,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+      >
+        {player.display_name.split(" ")[0]}
+      </span>
     </div>
   );
   return (

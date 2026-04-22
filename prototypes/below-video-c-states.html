@@ -1,0 +1,710 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Option C · sizes &amp; states</title>
+  <style>
+    :root {
+      --ink: #333;
+      --muted: #666;
+      --faint: #999;
+      --bg: #f7f7f8;
+      --line: #e2e2e2;
+      --line-soft: #f0f0f0;
+      --blue: #1a73e8;
+      --blue-bg: #e8f0fe;
+      --purple: #7c3aed;
+      --purple-bg: #f5f0ff;
+      --amber: #f59e0b;
+      --amber-bg: #fff8e1;
+      --red: #ef4444;
+      --red-bg: #fdebea;
+      --grey: #8b93a1;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, -apple-system, Segoe UI, sans-serif; }
+    body { padding: 24px 32px 80px; }
+    .wrap { max-width: 1100px; margin: 0 auto; }
+    h1 { font-size: 18px; margin: 0 0 4px; }
+    h2 {
+      font-size: 12px;
+      margin: 32px 0 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      padding-bottom: 6px;
+      border-bottom: 2px solid var(--line);
+    }
+    .sh { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin: 20px 0 6px; }
+    .note { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+
+    /* ═══════════════════════════════════════════════════════════════════ */
+    /* Panel shell — Option C counts header + content                     */
+    /* ═══════════════════════════════════════════════════════════════════ */
+
+    .panel {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .summary {
+      display: flex;
+      align-items: stretch;
+      border-bottom: 1px solid var(--line);
+    }
+    .stat {
+      flex: 1;
+      padding: 14px 16px;
+      text-align: left;
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      border-right: 1px solid var(--line);
+      font-family: inherit;
+      position: relative;
+    }
+    .stat:last-child { border-right: none; }
+    .stat.active { background: var(--blue-bg); }
+    .stat.active::after {
+      content: "";
+      position: absolute;
+      left: 0; right: 0; bottom: -1px;
+      height: 3px;
+      background: var(--blue);
+    }
+    .stat .num { font-size: 22px; font-weight: 700; color: var(--ink); line-height: 1; }
+    .stat .kind { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin-top: 4px; display: flex; align-items: center; gap: 5px; }
+    .stat .cdot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+    .dot-seq   { background: var(--purple); }
+    .dot-flag  { background: var(--amber); }
+    .dot-fault { background: var(--red); }
+
+    .panel.compact .stat { padding: 10px 12px; }
+    .panel.compact .stat .num { font-size: 16px; }
+    .panel.compact .stat .kind { font-size: 10px; }
+
+    .panel.tiny .summary { flex-direction: column; }
+    .panel.tiny .stat { border-right: none; border-bottom: 1px solid var(--line); padding: 10px 14px; display: flex; align-items: center; gap: 10px; }
+    .panel.tiny .stat:last-child { border-bottom: none; }
+    .panel.tiny .stat .num { font-size: 16px; }
+    .panel.tiny .stat .kind { margin-top: 0; }
+    .panel.tiny .stat.active::after { display: none; }
+
+    /* ── item rows shared across types ── */
+    .list { padding: 0; }
+    .item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--line-soft);
+      font-size: 13px;
+    }
+    .item:last-child { border-bottom: none; }
+    .item .ts {
+      padding: 3px 8px;
+      background: var(--blue-bg);
+      color: var(--blue);
+      border: 1px solid #c6dafc;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      flex-shrink: 0;
+      cursor: pointer;
+    }
+    .item .type {
+      padding: 2px 8px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-radius: 4px;
+      min-width: 52px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+    .t-drop  { background: #29b6f622; color: #29b6f6; }
+    .t-drive { background: #5e35b122; color: #5e35b1; }
+    .t-smash { background: #303f9f22; color: #303f9f; }
+    .t-dink  { background: #4caf5022; color: #4caf50; }
+
+    .meta { flex: 1; min-width: 0; }
+    .meta .title { font-weight: 600; color: var(--ink); }
+    .meta .sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+    .pill {
+      padding: 1px 7px;
+      border-radius: 3px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .pill-seq { background: var(--purple-bg); color: var(--purple); }
+    .pill-flag { background: var(--amber-bg); color: #7a5d00; }
+    .pill-fault { background: var(--red-bg); color: #b91c1c; }
+    .pill-drills { background: #e6f4ea; color: #1e7e34; }
+
+    .actions {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      margin-left: auto;
+    }
+    .btn {
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 4px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--muted);
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .btn:hover { background: #f4f4f5; }
+    .btn-primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+    .btn-primary:hover { background: #1661c9; }
+    .btn-danger { color: #b91c1c; border-color: #fca5a5; }
+    .btn-ghost { background: transparent; border-color: transparent; color: var(--muted); }
+    .btn-sm { padding: 2px 8px; font-size: 10px; }
+
+    /* ── expanded / build-mode panels ── */
+    .expanded {
+      padding: 12px 14px 14px;
+      background: #fafbff;
+      border-top: 1px solid var(--line-soft);
+    }
+    .expanded.flag-ex { background: #fffdf4; }
+    .expanded.fault-ex { background: #fef6f5; }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-bottom: 10px;
+    }
+    .field label {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .field input, .field textarea, .field select {
+      padding: 6px 8px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      font-family: inherit;
+      font-size: 13px;
+      background: #fff;
+      resize: vertical;
+    }
+    .field textarea { min-height: 44px; }
+
+    .fptm {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+    .fptm-pill {
+      padding: 3px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 5px;
+      border: 1px solid var(--line);
+      background: #fff;
+      cursor: pointer;
+      font-family: inherit;
+      color: var(--muted);
+    }
+    .fptm-pill.active {
+      background: var(--purple-bg);
+      border-color: #d8c8ff;
+      color: var(--purple);
+    }
+
+    .shot-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 6px;
+    }
+    .shot-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px 2px 4px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .shot-chip .n { width: 14px; height: 14px; background: #f0f0f0; border-radius: 50%; color: var(--ink); font-size: 9px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+    .shot-chip.selected { background: #e8f0fe; border-color: #c6dafc; color: var(--blue); }
+    .shot-chip.selected .n { background: var(--blue); color: #fff; }
+
+    .video-placeholder {
+      height: 96px;
+      background: #1a1a1a;
+      border-radius: 10px;
+      color: #555;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      margin-bottom: 14px;
+    }
+
+    .size-label {
+      display: inline-block;
+      padding: 2px 8px;
+      background: #1a1a1a;
+      color: #fff;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      margin-bottom: 6px;
+    }
+
+    .grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    .grid-3 { grid-template-columns: 1fr; }
+
+    .state-label {
+      display: inline-block;
+      padding: 2px 8px;
+      background: #f4f4f5;
+      color: var(--muted);
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+    .state-label.build { background: var(--amber-bg); color: #7a5d00; }
+    .state-label.view { background: var(--blue-bg); color: var(--blue); }
+    .state-label.edit { background: var(--purple-bg); color: var(--purple); }
+
+    /* readonly variants for the View state */
+    .readonly .field input,
+    .readonly .field textarea {
+      background: transparent;
+      border-color: transparent;
+      padding-left: 0;
+      color: var(--ink);
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Option C · sizes &amp; states prototype</h1>
+  <p class="note">
+    Same Option C panel rendered at <b>three sizes</b> (wide, compact, narrow/side-rail), and each of the three item types shown in <b>Build</b>, <b>View</b>, and <b>Edit</b> states.
+  </p>
+  <div class="video-placeholder">· video would be here ·</div>
+
+  <!-- ════════════════════════════════════════════════════════════════ -->
+  <h2>1 · Sizes</h2>
+  <p class="note">The counts header adapts; the list rows below stay the same pattern.</p>
+
+  <!-- Wide -->
+  <span class="size-label">Wide · ~900px</span>
+  <div class="panel" style="max-width:900px;">
+    <div class="summary">
+      <button class="stat active">
+        <div class="num">2</div>
+        <div class="kind"><span class="cdot dot-seq"></span> Sequences</div>
+      </button>
+      <button class="stat">
+        <div class="num">3</div>
+        <div class="kind"><span class="cdot dot-flag"></span> Flags</div>
+      </button>
+      <button class="stat">
+        <div class="num">5</div>
+        <div class="kind"><span class="cdot dot-fault"></span> Faults</div>
+      </button>
+    </div>
+    <div class="list">
+      <div class="item">
+        <span class="ts">0:19 ▶</span>
+        <span class="type t-drive">drive</span>
+        <div class="meta">
+          <div class="title">Geoff Whitchurch <span class="pill pill-seq">▤ 5 shots</span></div>
+          <div class="sub">Rally 2 shots 3–5 · Drive on the transition — not ready at kitchen</div>
+        </div>
+        <div class="actions">
+          <button class="btn btn-sm">Open</button>
+        </div>
+      </div>
+      <div class="item">
+        <span class="ts">1:42 ▶</span>
+        <span class="type t-dink">dink</span>
+        <div class="meta">
+          <div class="title">Ron West <span class="pill pill-seq">▤ 4 shots</span> <span class="pill pill-drills">drill</span></div>
+          <div class="sub">Rally 6 shots 8–11 · Attackable dink to middle</div>
+        </div>
+        <div class="actions">
+          <button class="btn btn-sm">Open</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Compact -->
+  <div style="margin-top:14px;"></div>
+  <span class="size-label">Compact · ~560px</span>
+  <div class="panel compact" style="max-width:560px;">
+    <div class="summary">
+      <button class="stat active"><div class="num">2</div><div class="kind"><span class="cdot dot-seq"></span> Sequences</div></button>
+      <button class="stat"><div class="num">3</div><div class="kind"><span class="cdot dot-flag"></span> Flags</div></button>
+      <button class="stat"><div class="num">5</div><div class="kind"><span class="cdot dot-fault"></span> Faults</div></button>
+    </div>
+    <div class="list">
+      <div class="item">
+        <span class="ts">0:19 ▶</span>
+        <span class="type t-drive">drive</span>
+        <div class="meta">
+          <div class="title">Geoff · <span class="pill pill-seq">▤ 5</span></div>
+          <div class="sub">Rally 2 · Not ready at kitchen</div>
+        </div>
+      </div>
+      <div class="item">
+        <span class="ts">1:42 ▶</span>
+        <span class="type t-dink">dink</span>
+        <div class="meta">
+          <div class="title">Ron · <span class="pill pill-seq">▤ 4</span></div>
+          <div class="sub">Rally 6 · Attackable dink</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tiny -->
+  <div style="margin-top:14px;"></div>
+  <span class="size-label">Narrow / side rail · ~320px</span>
+  <div class="panel tiny" style="max-width:320px;">
+    <div class="summary">
+      <button class="stat active"><div class="num">2</div><div class="kind"><span class="cdot dot-seq"></span> Sequences</div></button>
+      <button class="stat"><div class="num">3</div><div class="kind"><span class="cdot dot-flag"></span> Flags</div></button>
+      <button class="stat"><div class="num">5</div><div class="kind"><span class="cdot dot-fault"></span> Faults</div></button>
+    </div>
+    <div class="list">
+      <div class="item">
+        <span class="ts">0:19 ▶</span>
+        <div class="meta">
+          <div class="title">Geoff · drive</div>
+          <div class="sub">Rally 2 · 5 shots</div>
+        </div>
+      </div>
+      <div class="item">
+        <span class="ts">1:42 ▶</span>
+        <div class="meta">
+          <div class="title">Ron · dink</div>
+          <div class="sub">Rally 6 · 4 shots</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════════ -->
+  <h2>2 · Sequences — build / view / edit</h2>
+
+  <!-- Build -->
+  <div class="sh"><span class="state-label build">Build</span> — picking shots + writing diagnosis</div>
+  <div class="panel" style="max-width:780px;">
+    <div class="summary">
+      <button class="stat active"><div class="num">2 → 3</div><div class="kind"><span class="cdot dot-seq"></span> Sequences</div></button>
+      <button class="stat"><div class="num">3</div><div class="kind"><span class="cdot dot-flag"></span> Flags</div></button>
+      <button class="stat"><div class="num">5</div><div class="kind"><span class="cdot dot-fault"></span> Faults</div></button>
+    </div>
+    <div class="expanded">
+      <div class="field">
+        <label>Rally 4 shots <span style="color:var(--muted); font-weight:400; text-transform:none; letter-spacing:0;">· click to toggle</span></label>
+        <div class="shot-chips">
+          <span class="shot-chip"><span class="n">1</span> serve · Ron</span>
+          <span class="shot-chip"><span class="n">2</span> return · Celeste</span>
+          <span class="shot-chip selected"><span class="n">3</span> third · Ron</span>
+          <span class="shot-chip selected"><span class="n">4</span> dink · Jelena</span>
+          <span class="shot-chip selected"><span class="n">5</span> dink · Geoff</span>
+          <span class="shot-chip"><span class="n">6</span> smash · Celeste</span>
+        </div>
+      </div>
+      <div class="field">
+        <label>Label (optional)</label>
+        <input type="text" placeholder="e.g. Third-drop transition" />
+      </div>
+      <div class="field">
+        <label>FPTM diagnosis</label>
+        <div class="fptm">
+          <button class="fptm-pill">F · Foot</button>
+          <button class="fptm-pill active">P · Position</button>
+          <button class="fptm-pill active">T · Timing</button>
+          <button class="fptm-pill">M · Mental</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Drills (optional)</label>
+        <textarea placeholder="What to practice next session…">Shadow-stepping drill — 3 reps per foot</textarea>
+      </div>
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:4px;">
+        <button class="btn btn-ghost">Cancel</button>
+        <button class="btn btn-primary">Save sequence</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- View -->
+  <div class="sh"><span class="state-label view">View</span> — saved sequence, read-only</div>
+  <div class="panel" style="max-width:780px;">
+    <div class="summary">
+      <button class="stat active"><div class="num">2</div><div class="kind"><span class="cdot dot-seq"></span> Sequences</div></button>
+      <button class="stat"><div class="num">3</div><div class="kind"><span class="cdot dot-flag"></span> Flags</div></button>
+      <button class="stat"><div class="num">5</div><div class="kind"><span class="cdot dot-fault"></span> Faults</div></button>
+    </div>
+    <div class="expanded readonly">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+        <span class="ts">0:19 ▶</span>
+        <span class="pill pill-seq">▤ 5 shots</span>
+        <span style="font-size:13px; font-weight:600;">Geoff · rally 2</span>
+        <span style="flex:1"></span>
+        <button class="btn btn-sm">Edit</button>
+        <button class="btn btn-sm btn-danger">Delete</button>
+      </div>
+      <div style="font-size:12px; color:var(--muted); margin-bottom:8px;">
+        <span class="pill pill-seq" style="margin-right:6px;">P</span>
+        <span class="pill pill-seq" style="margin-right:6px;">T</span>
+        Not ready at kitchen — arrives off-balance.
+      </div>
+      <div style="font-size:12px; color:var(--muted);">
+        <b style="color:var(--ink)">Drill:</b> Shadow-stepping drill — 3 reps per foot
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit -->
+  <div class="sh"><span class="state-label edit">Edit</span> — same as Build but starts populated</div>
+  <div class="panel" style="max-width:780px;">
+    <div class="summary">
+      <button class="stat active"><div class="num">2</div><div class="kind"><span class="cdot dot-seq"></span> Sequences</div></button>
+      <button class="stat"><div class="num">3</div><div class="kind"><span class="cdot dot-flag"></span> Flags</div></button>
+      <button class="stat"><div class="num">5</div><div class="kind"><span class="cdot dot-fault"></span> Faults</div></button>
+    </div>
+    <div class="expanded">
+      <div class="field">
+        <label>Shots in sequence</label>
+        <div class="shot-chips">
+          <span class="shot-chip selected"><span class="n">3</span> third · Ron</span>
+          <span class="shot-chip selected"><span class="n">4</span> dink · Jelena</span>
+          <span class="shot-chip selected"><span class="n">5</span> dink · Geoff</span>
+        </div>
+      </div>
+      <div class="field">
+        <label>Label</label>
+        <input type="text" value="Third-drop transition" />
+      </div>
+      <div class="field">
+        <label>FPTM diagnosis</label>
+        <div class="fptm">
+          <button class="fptm-pill">F</button>
+          <button class="fptm-pill active">P · Position</button>
+          <button class="fptm-pill active">T · Timing</button>
+          <button class="fptm-pill">M</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Drills</label>
+        <textarea>Shadow-stepping drill — 3 reps per foot</textarea>
+      </div>
+      <div style="display:flex; gap:8px; justify-content:flex-end;">
+        <button class="btn btn-ghost">Cancel</button>
+        <button class="btn btn-danger">Delete</button>
+        <button class="btn btn-primary">Save changes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════════ -->
+  <h2>3 · Flags — build / view / edit</h2>
+
+  <div class="sh"><span class="state-label build">Build</span> — one-click flag + optional note</div>
+  <div class="panel" style="max-width:780px;">
+    <div class="summary">
+      <button class="stat"><div class="num">2</div><div class="kind"><span class="cdot dot-seq"></span> Sequences</div></button>
+      <button class="stat active"><div class="num">3 → 4</div><div class="kind"><span class="cdot dot-flag"></span> Flags</div></button>
+      <button class="stat"><div class="num">5</div><div class="kind"><span class="cdot dot-fault"></span> Faults</div></button>
+    </div>
+    <div class="expanded flag-ex">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+        <span class="ts">0:45 ▶</span>
+        <span class="type t-smash">smash</span>
+        <span style="font-size:13px;">Celeste · rally 4 · shot 7</span>
+      </div>
+      <div class="field">
+        <label>Flag note (optional)</label>
+        <textarea placeholder="Why did you flag this? Add context or a prompt for later review…"></textarea>
+      </div>
+      <div style="display:flex; gap:8px; justify-content:flex-end;">
+        <button class="btn btn-ghost">Unflag</button>
+        <button class="btn">Flag &amp; close</button>
+        <button class="btn btn-primary">Flag &amp; diagnose</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="sh"><span class="state-label view">View</span> — flagged shot with or without diagnosis</div>
+  <div class="panel" style="max-width:780px;">
+    <div class="summary">
+      <button class="stat"><div class="num">2</div><div class="kind"><span class="cdot dot-seq"></span> Sequences</div></button>
+      <button class="stat active"><div class="num">3</div><div class="kind"><span class="cdot dot-flag"></span> Flags</div></button>
+      <button class="stat"><div class="num">5</div><div class="kind"><span class="cdot dot-fault"></span> Faults</div></button>
+    </div>
+    <div class="expanded flag-ex readonly">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+        <span class="ts">0:45 ▶</span>
+        <span class="pill pill-flag">⚑ flag</span>
+        <span style="font-size:13px; font-weight:600;">Celeste · rally 4 · smash</span>
+        <span style="flex:1"></span>
+        <button class="btn btn-sm">Edit</button>
+        <button class="btn btn-sm btn-danger">Unflag</button>
+      </div>
+      <div style="font-size:12px; color:var(--muted); margin-bottom:6px; font-style:italic;">
+        "Good setup but put away left — check footwork coming off the ball."
+      </div>
+      <div style="font-size:12px; color:var(--muted);">
+        <span class="pill pill-flag" style="margin-right:6px;">F · Foot</span>
+        <span class="pill pill-flag" style="margin-right:6px;">P · Position</span>
+        Lagging set-up on the crosscourt.
+      </div>
+    </div>
+  </div>
+
+  <div class="sh"><span class="state-label edit">Edit</span> — update note + FPTM + drills</div>
+  <div class="panel" style="max-width:780px;">
+    <div class="summary">
+      <button class="stat"><div class="num">2</div><div class="kind"><span class="cdot dot-seq"></span> Sequences</div></button>
+      <button class="stat active"><div class="num">3</div><div class="kind"><span class="cdot dot-flag"></span> Flags</div></button>
+      <button class="stat"><div class="num">5</div><div class="kind"><span class="cdot dot-fault"></span> Faults</div></button>
+    </div>
+    <div class="expanded flag-ex">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+        <span class="ts">0:45 ▶</span>
+        <span class="type t-smash">smash</span>
+        <span style="font-size:13px; font-weight:600;">Celeste · rally 4 · shot 7</span>
+      </div>
+      <div class="field">
+        <label>Note</label>
+        <textarea>Good setup but put away left — check footwork coming off the ball.</textarea>
+      </div>
+      <div class="field">
+        <label>FPTM diagnosis</label>
+        <div class="fptm">
+          <button class="fptm-pill active">F · Foot</button>
+          <button class="fptm-pill active">P · Position</button>
+          <button class="fptm-pill">T</button>
+          <button class="fptm-pill">M</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Drills</label>
+        <textarea></textarea>
+      </div>
+      <div style="display:flex; gap:8px; justify-content:flex-end;">
+        <button class="btn btn-ghost">Cancel</button>
+        <button class="btn btn-danger">Unflag</button>
+        <button class="btn">Promote to sequence ±2</button>
+        <button class="btn btn-primary">Save changes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════════ -->
+  <h2>4 · Faults — view / edit (build is automatic)</h2>
+  <p class="note">Faults come from PB Vision data automatically — there's no "build" state. Editing is just flipping "Not significant" (and optionally adding a note).</p>
+
+  <div class="sh"><span class="state-label view">View</span> — default row, active fault</div>
+  <div class="panel" style="max-width:780px;">
+    <div class="summary">
+      <button class="stat"><div class="num">2</div><div class="kind"><span class="cdot dot-seq"></span> Sequences</div></button>
+      <button class="stat"><div class="num">3</div><div class="kind"><span class="cdot dot-flag"></span> Flags</div></button>
+      <button class="stat active"><div class="num">5</div><div class="kind"><span class="cdot dot-fault"></span> Faults</div></button>
+    </div>
+    <div class="list">
+      <div class="item">
+        <span class="ts">0:20 ▶</span>
+        <span class="type t-drive">drive</span>
+        <div class="meta">
+          <div class="title">Jelena <span class="pill pill-fault">● fault</span></div>
+          <div class="sub">Rally 2 · drive out wide</div>
+        </div>
+        <div class="actions">
+          <button class="btn btn-sm">✕ Not significant</button>
+        </div>
+      </div>
+      <div class="item">
+        <span class="ts">1:08 ▶</span>
+        <span class="type t-dink">dink</span>
+        <div class="meta">
+          <div class="title">Ron <span class="pill pill-fault">● fault</span></div>
+          <div class="sub">Rally 5 · dink into net</div>
+        </div>
+        <div class="actions">
+          <button class="btn btn-sm">✕ Not significant</button>
+        </div>
+      </div>
+      <div class="item" style="opacity:0.55;">
+        <span class="ts">1:54 ▶</span>
+        <span class="type t-smash">smash</span>
+        <div class="meta">
+          <div class="title">Geoff <span class="pill" style="background:#eceff3; color:var(--muted);">dismissed</span></div>
+          <div class="sub">Rally 7 · ace return</div>
+        </div>
+        <div class="actions">
+          <button class="btn btn-sm">Restore</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sh"><span class="state-label edit">Edit</span> — add optional coach note to the fault</div>
+  <div class="panel" style="max-width:780px;">
+    <div class="summary">
+      <button class="stat"><div class="num">2</div><div class="kind"><span class="cdot dot-seq"></span> Sequences</div></button>
+      <button class="stat"><div class="num">3</div><div class="kind"><span class="cdot dot-flag"></span> Flags</div></button>
+      <button class="stat active"><div class="num">5</div><div class="kind"><span class="cdot dot-fault"></span> Faults</div></button>
+    </div>
+    <div class="expanded fault-ex">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+        <span class="ts">0:20 ▶</span>
+        <span class="type t-drive">drive</span>
+        <span style="font-size:13px; font-weight:600;">Jelena · rally 2 · fault</span>
+      </div>
+      <div class="field">
+        <label>Coach note (optional)</label>
+        <textarea placeholder="Why did this one end the rally? Add context…"></textarea>
+      </div>
+      <div style="display:flex; gap:8px; justify-content:flex-end;">
+        <button class="btn btn-ghost">Cancel</button>
+        <button class="btn">✕ Not significant</button>
+        <button class="btn">Promote to sequence ±2</button>
+        <button class="btn btn-primary">Save note</button>
+      </div>
+    </div>
+  </div>
+
+  <h2>Open questions</h2>
+  <ul style="color:var(--muted); font-size:13px;">
+    <li>Do faults need their own coach note + FPTM, or is dismissal ("Not significant") enough?</li>
+    <li>On narrow size, the compact summary + single-line items still readable, or drop more fields?</li>
+    <li>In the list row (View), should the "Open" button expand inline (as shown in the View states above) or open a separate panel?</li>
+  </ul>
+</div>
+</body>
+</html>

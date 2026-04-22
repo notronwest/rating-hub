@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { supabase } from "../supabase";
 import type { Game, GamePlayer, GamePlayerShotType, GamePlayerCourtZone } from "../types/database";
 import { computeHighlights, GameHighlightsFull, type GameHighlightData } from "../components/GameHighlights";
-import { useIsCoach } from "../auth/useOrgRole";
-import { getAnalysisByGameId } from "../lib/coachApi";
-import type { GameAnalysis } from "../types/coach";
 import TeamStatsBlock from "../components/game/TeamStatsBlock";
+import GameHeader from "../components/GameHeader";
 
 interface PlayerCard {
   gp: GamePlayer;
@@ -19,21 +17,12 @@ interface PlayerCard {
 
 export default function GameDetailPage() {
   const { orgId, gameId } = useParams();
-  const [searchParams] = useSearchParams();
-  const fromPlayer = searchParams.get("from") === "player";
   const [game, setGame] = useState<Game | null>(null);
   const [playerCards, setPlayerCards] = useState<PlayerCard[]>([]);
   const [rallies, setRallies] = useState<{ shot_count: number | null; winning_team: number | null }[]>([]);
   const [allShotTypes, setAllShotTypes] = useState<GamePlayerShotType[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [analysis, setAnalysis] = useState<GameAnalysis | null>(null);
-  const isCoach = useIsCoach(orgId);
-
-  useEffect(() => {
-    if (!gameId) return;
-    getAnalysisByGameId(gameId).then(setAnalysis).catch(() => setAnalysis(null));
-  }, [gameId]);
 
   useEffect(() => {
     if (!gameId) return;
@@ -124,75 +113,15 @@ export default function GameDetailPage() {
 
   return (
     <div>
-      {/* Back link (only when not in player context — breadcrumb handles that) */}
-      {!fromPlayer && game.session_id && (
-        <Link
-          to={`/org/${orgId}/sessions/${game.session_id}`}
-          style={{ fontSize: 13, color: "#888", textDecoration: "none" }}
-        >
-          &larr; Back to session
-        </Link>
-      )}
+      <GameHeader orgId={orgId ?? ""} gameId={gameId ?? ""} mode="stats" />
 
-      {/* Game header */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: 12,
-          marginTop: game.session_id ? 8 : 0,
-          marginBottom: 4,
-        }}
-      >
-        <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0, flex: 1 }}>
-          {game.session_name || game.pbvision_video_id}
-          {analysis && (
-            <span
-              style={{
-                marginLeft: 10,
-                fontSize: 11,
-                padding: "3px 8px",
-                background: "#e8f0fe",
-                color: "#1a73e8",
-                borderRadius: 4,
-                fontWeight: 600,
-                letterSpacing: 0.3,
-                verticalAlign: "middle",
-              }}
-              title="This game has been analyzed by a coach"
-            >
-              ✓ COACH ANALYZED
-            </span>
-          )}
-        </h2>
-        {isCoach && (
-          <Link
-            to={`/org/${orgId}/games/${gameId}/analyze`}
-            style={{
-              padding: "8px 14px",
-              fontSize: 13,
-              fontWeight: 600,
-              background: "#1a73e8",
-              color: "#fff",
-              textDecoration: "none",
-              borderRadius: 6,
-            }}
-          >
-            {analysis ? "Continue analysis" : "Analyze"} →
-          </Link>
-        )}
-      </div>
-      <div style={{ display: "flex", gap: 20, fontSize: 14, color: "#666", marginBottom: 24 }}>
-        {game.played_at && <span>{new Date(game.played_at).toLocaleDateString()}</span>}
-        {game.team0_score != null && game.team1_score != null && (
-          <span style={{ fontWeight: 600, color: "#333", fontSize: 18 }}>
-            {game.team0_score} – {game.team1_score}
-          </span>
-        )}
-        {game.scoring_type && <span>{game.scoring_type}</span>}
-        {game.total_rallies && <span>{game.total_rallies} rallies</span>}
-      </div>
+      {/* Secondary meta line — scoring type + rally count */}
+      {(game.scoring_type || game.total_rallies) && (
+        <div style={{ display: "flex", gap: 20, fontSize: 13, color: "#888", marginTop: -8, marginBottom: 16 }}>
+          {game.scoring_type && <span>{game.scoring_type}</span>}
+          {game.total_rallies && <span>{game.total_rallies} rallies</span>}
+        </div>
+      )}
 
       {/* Highlights */}
       {highlights.length > 0 && <GameHighlightsFull highlights={highlights} />}

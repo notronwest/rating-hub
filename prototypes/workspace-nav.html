@@ -1,0 +1,766 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Workspace Nav Prototype</title>
+  <style>
+    :root {
+      --ink: #333;
+      --muted: #666;
+      --faint: #999;
+      --bg: #f7f7f8;
+      --card: #fff;
+      --line: #e2e2e2;
+      --line-soft: #eee;
+      --blue: #1a73e8;
+      --blue-bg: #e8f0fe;
+      --purple: #7c3aed;
+      --purple-bg: #7c3aed12;
+      --amber: #f59e0b;
+      --green: #22c55e;
+      /* Winner / loser palette — replaces team colors in player-name variants */
+      --gold: #b48811;          /* darker, readable on white */
+      --gold-accent: #d4a017;   /* avatar fills, brighter metallic */
+      --gold-bg: #fdf1d6;
+      --gold-border: #f0d77b;
+      --silver: #64748b;        /* slate text */
+      --silver-accent: #94a3b8; /* avatar fills */
+      --silver-bg: #eff1f5;
+      --silver-border: #cbd5e1;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, -apple-system, Segoe UI, sans-serif; }
+    body { padding: 24px 32px; }
+    .wrap { max-width: 1100px; margin: 0 auto; }
+    h1 { font-size: 18px; margin: 0 0 4px; }
+    h2 { font-size: 13px; margin: 32px 0 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
+    .note { color: var(--muted); font-size: 13px; margin: 0 0 18px; }
+
+    /* ——— Workspace bar ——— */
+    .workspace {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px 18px 10px;
+      margin-bottom: 18px;
+    }
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .row + .row { margin-top: 8px; }
+
+    /* row 1: session + game nav */
+    .session-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--ink);
+      font-size: 12px;
+      font-weight: 500;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .session-chip:hover { background: var(--blue-bg); border-color: #c6dafc; color: var(--blue); }
+    .session-chip .back { color: var(--faint); font-size: 13px; }
+    .session-chip .date { color: var(--muted); }
+    .session-chip .label { color: var(--ink); }
+
+    .spacer { flex: 1; }
+
+    .game-nav {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .game-nav .pos { padding: 0 4px; font-weight: 600; color: var(--ink); }
+    .arrow-btn {
+      width: 24px;
+      height: 24px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .arrow-btn:hover { background: var(--blue-bg); color: var(--blue); border-color: #c6dafc; }
+    .arrow-btn.disabled { opacity: 0.35; cursor: default; }
+    .arrow-btn.disabled:hover { background: #fff; color: var(--muted); border-color: var(--line); }
+
+    /* row 2: title + score */
+    .title { font-size: 22px; font-weight: 700; color: var(--ink); }
+    .score {
+      font-size: 14px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 6px;
+      background: var(--bg);
+      border: 1px solid var(--line);
+    }
+    .score .t0 { color: var(--blue); }
+    .score .dash { color: var(--faint); padding: 0 2px; }
+    .score .t1 { color: var(--amber); }
+    .won-badge {
+      font-size: 10px;
+      font-weight: 700;
+      color: #fff;
+      background: var(--green);
+      padding: 2px 6px;
+      border-radius: 3px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    /* row 3: tabs + status */
+    .tabs {
+      display: inline-flex;
+      gap: 4px;
+      padding: 4px;
+      background: var(--bg);
+      border-radius: 10px;
+    }
+    .tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 14px;
+      border-radius: 7px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--muted);
+      text-decoration: none;
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      font-family: inherit;
+    }
+    .tab:hover { color: var(--ink); }
+    .tab.active {
+      background: #fff;
+      color: var(--ink);
+      font-weight: 700;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+    }
+    .tab .dot {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--purple);
+    }
+
+    .status-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--purple-bg);
+      color: var(--purple);
+    }
+    .status-chip.idle {
+      background: var(--bg);
+      color: var(--muted);
+      border: 1px dashed #ccc;
+    }
+
+    /* drill chip for review */
+    .drill {
+      margin-top: 10px;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 10px 6px 6px;
+      background: var(--purple-bg);
+      border: 1px solid #d8c8ff;
+      border-radius: 999px;
+      font-size: 13px;
+      color: var(--ink);
+    }
+    .drill .avatar {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: var(--purple);
+      color: #fff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .drill .name { font-weight: 600; }
+    .drill .clear {
+      margin-left: 4px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #fff;
+      border: 1px solid #d8c8ff;
+      color: var(--purple);
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    /* placeholder body */
+    .body {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 24px;
+      color: var(--faint);
+      min-height: 140px;
+      font-size: 13px;
+    }
+
+    .frame { margin-bottom: 36px; }
+    .frame-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      margin-bottom: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Workspace Nav — Prototype</h1>
+    <p class="note">
+      Same bar renders across all three game views. Click the session chip to go back, use ⏴⏵ to switch games within the session, tap a tab to change mode.
+    </p>
+
+    <!-- ────────── FRAME 1: Game Stats ────────── -->
+    <div class="frame">
+      <div class="frame-label">Frame 1 · Game Stats tab active</div>
+      <div class="workspace">
+        <div class="row">
+          <a class="session-chip" title="Back to session">
+            <span class="back">←</span>
+            <span class="label">Monday Night Rec</span>
+          </a>
+          <span class="spacer"></span>
+          <span class="game-nav">
+            <span class="arrow-btn" title="Go to Game 1">‹</span>
+            <span class="pos">Game 2 of 2</span>
+            <span class="arrow-btn disabled" title="No next game">›</span>
+          </span>
+        </div>
+        <div class="row">
+          <span class="title">Game 2</span>
+        </div>
+        <div class="row">
+          <div class="tabs">
+            <a class="tab active">📊 Game Stats</a>
+            <a class="tab">🎬 Analyze</a>
+            <a class="tab">🎓 Review <span class="dot"></span></a>
+          </div>
+          <span class="spacer"></span>
+          <span class="status-chip">• Review Started</span>
+        </div>
+      </div>
+      <div class="body">
+        Game-level stats (kitchen arrival, shot distribution, team performance) would render here. Same content that's on GameDetailPage today — just under the unified bar.
+      </div>
+    </div>
+
+    <!-- ────────── FRAME 2: Analyze ────────── -->
+    <div class="frame">
+      <div class="frame-label">Frame 2 · Analyze tab active (Game 1 — no review work yet)</div>
+      <div class="workspace">
+        <div class="row">
+          <a class="session-chip">
+            <span class="back">←</span>
+            <span class="label">Monday Night Rec</span>
+          </a>
+          <span class="spacer"></span>
+          <span class="game-nav">
+            <span class="arrow-btn disabled">‹</span>
+            <span class="pos">Game 1 of 2</span>
+            <span class="arrow-btn" title="Go to Game 2">›</span>
+          </span>
+        </div>
+        <div class="row">
+          <span class="title">Game 1</span>
+        </div>
+        <div class="row">
+          <div class="tabs">
+            <a class="tab">📊 Game Stats</a>
+            <a class="tab active">🎬 Analyze</a>
+            <a class="tab">🎓 Review</a>
+          </div>
+          <span class="spacer"></span>
+          <span class="status-chip idle">Review not started</span>
+        </div>
+      </div>
+      <div class="body">
+        Video player + rally strip + shot list would render here. Same content as today's AnalyzePage.
+      </div>
+    </div>
+
+    <!-- ────────── FRAME 3: Review — no player drilled in ────────── -->
+    <div class="frame">
+      <div class="frame-label">Frame 3 · Review tab active · Overview (no player)</div>
+      <div class="workspace">
+        <div class="row">
+          <a class="session-chip">
+            <span class="back">←</span>
+            <span class="label">Monday Night Rec</span>
+          </a>
+          <span class="spacer"></span>
+          <span class="game-nav">
+            <span class="arrow-btn" title="Go to Game 1">‹</span>
+            <span class="pos">Game 2 of 2</span>
+            <span class="arrow-btn disabled">›</span>
+          </span>
+        </div>
+        <div class="row">
+          <span class="title">Game 2</span>
+        </div>
+        <div class="row">
+          <div class="tabs">
+            <a class="tab">📊 Game Stats</a>
+            <a class="tab">🎬 Analyze</a>
+            <a class="tab active">🎓 Review <span class="dot"></span></a>
+          </div>
+          <span class="spacer"></span>
+          <span class="status-chip">• 1 sequence · 1 flag</span>
+        </div>
+      </div>
+      <div class="body">
+        Flagged shots + saved sequences list. Pick a player from the existing review UI to drill in.
+      </div>
+    </div>
+
+    <!-- ────────── FRAME 4: Review — player drilled in ────────── -->
+    <div class="frame">
+      <div class="frame-label">Frame 4 · Review tab · drilled into a player</div>
+      <div class="workspace">
+        <div class="row">
+          <a class="session-chip">
+            <span class="back">←</span>
+            <span class="label">Monday Night Rec</span>
+          </a>
+          <span class="spacer"></span>
+          <span class="game-nav">
+            <span class="arrow-btn">‹</span>
+            <span class="pos">Game 2 of 2</span>
+            <span class="arrow-btn disabled">›</span>
+          </span>
+        </div>
+        <div class="row">
+          <span class="title">Game 2</span>
+        </div>
+        <div class="row">
+          <div class="tabs">
+            <a class="tab">📊 Game Stats</a>
+            <a class="tab">🎬 Analyze</a>
+            <a class="tab active">🎓 Review <span class="dot"></span></a>
+          </div>
+          <span class="spacer"></span>
+          <span class="status-chip">• 1 sequence · 1 flag</span>
+        </div>
+        <div class="drill">
+          <span class="avatar">GW</span>
+          <span class="name">Geoff Whitchurch</span>
+          <span style="color:var(--muted); font-size:12px;">· 6 losses · 1 flag</span>
+          <button class="clear" title="Back to review overview">✕</button>
+        </div>
+      </div>
+      <div class="body">
+        Player-specific review content — losing rallies, flagged shots, FPTM diagnosis. Clicking ✕ on the drill chip returns to Frame 3 (review overview for this game, player cleared).
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════════ -->
+    <!-- Player roster — just the 4 players, equal weight, no teams emphasized -->
+    <!-- ════════════════════════════════════════════════════════════════ -->
+    <h2>Player roster — who played this game</h2>
+    <p class="note">
+      Four players, shown as equals (partners rotate across a session, so matchups don't need to stand out). Pick one.
+    </p>
+
+    <style>
+      .mini-avatar {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        color: #fff;
+        font-size: 10px;
+        font-weight: 700;
+        flex-shrink: 0;
+      }
+      .avatar-blue { background: var(--blue); }
+      .avatar-amber { background: var(--amber); }
+      .avatar-gold { background: var(--gold-accent); color: #fff; box-shadow: inset 0 -1px 0 rgba(0,0,0,0.15); }
+      .avatar-silver { background: var(--silver-accent); color: #fff; }
+      .team-strip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .team-strip .names { font-size: 13px; font-weight: 500; color: var(--ink); }
+      .vs {
+        color: var(--faint);
+        font-size: 11px;
+        font-weight: 600;
+        padding: 0 8px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+      .variant-label {
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        margin-bottom: 6px;
+      }
+      .variant {
+        margin-bottom: 18px;
+      }
+      .inline-team-line {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 4px;
+      }
+      .inline-team-line .team0 { color: var(--blue); font-weight: 600; font-size: 13px; }
+      .inline-team-line .team1 { color: var(--amber); font-weight: 600; font-size: 13px; }
+      .chip-pair {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px 8px 3px 4px;
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+      }
+      .chip-pair.t0 { background: #e8f0fe; border-color: #c6dafc; }
+      .chip-pair.t1 { background: #fef3e2; border-color: #fcd9a3; }
+      .chip-pair.winner { background: var(--gold-bg); border-color: var(--gold-border); color: var(--gold); }
+      .chip-pair.loser { background: var(--silver-bg); border-color: var(--silver-border); color: var(--silver); }
+      .chip-pair .name { font-size: 12px; font-weight: 500; }
+      .team-row-card {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .team-card {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        border-radius: 8px;
+        flex: 1;
+      }
+      .team-card.t0 { background: #e8f0fe; }
+      .team-card.t1 { background: #fef3e2; }
+      .team-card.winner { background: var(--gold-bg); border: 1px solid var(--gold-border); }
+      .team-card.loser { background: var(--silver-bg); border: 1px solid var(--silver-border); }
+      .team-card .players { display: flex; flex-direction: column; font-size: 12px; font-weight: 500; color: var(--ink); gap: 2px; }
+      .team-card .label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
+      .compact-title {
+        display: flex;
+        align-items: baseline;
+        gap: 12px;
+      }
+      .matchup {
+        font-size: 14px;
+        color: var(--muted);
+      }
+      .matchup .t0-name { color: var(--blue); font-weight: 600; }
+      .matchup .t1-name { color: var(--amber); font-weight: 600; }
+      .matchup .winner-name { color: var(--gold); font-weight: 700; }
+      .matchup .loser-name { color: var(--silver); font-weight: 500; }
+    </style>
+
+    <style>
+      .roster-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 10px 3px 3px;
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--ink);
+        cursor: pointer;
+      }
+      .roster-chip:hover { border-color: #c6dafc; background: #fafbff; }
+      .roster-chip .mini-avatar {
+        background: #8899a6;
+        width: 20px;
+        height: 20px;
+        font-size: 9px;
+      }
+      .roster-avatar {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 3px;
+      }
+      .roster-avatar .mini-avatar {
+        background: #8899a6;
+        width: 28px;
+        height: 28px;
+        font-size: 11px;
+      }
+      .roster-avatar .n { font-size: 11px; color: var(--muted); }
+      .roster-names-inline {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .roster-names-inline .dot-sep { color: var(--faint); }
+      .roster-names-inline .pn { color: var(--ink); font-weight: 500; }
+    </style>
+
+    <!-- Variant 1: four equal avatar chips -->
+    <div class="variant">
+      <div class="variant-label">Variant 1 · Four avatar chips in a row</div>
+      <div class="workspace">
+        <div class="row">
+          <a class="session-chip"><span class="back">←</span><span class="label">Monday Night Rec</span></a>
+          <span class="spacer"></span>
+          <span class="game-nav"><span class="arrow-btn">‹</span><span class="pos">Game 2 of 2</span><span class="arrow-btn disabled">›</span></span>
+        </div>
+        <div class="row">
+          <span class="title">Game 2</span>
+          <span class="spacer"></span>
+          <span style="display:inline-flex; gap:6px; align-items:center;">
+            <span class="roster-chip"><span class="mini-avatar">RW</span>Ron</span>
+            <span class="roster-chip"><span class="mini-avatar">GW</span>Geoff</span>
+            <span class="roster-chip"><span class="mini-avatar">CG</span>Celeste</span>
+            <span class="roster-chip"><span class="mini-avatar">JN</span>Jelena</span>
+          </span>
+        </div>
+        <div class="row">
+          <div class="tabs">
+            <a class="tab active">📊 Game Stats</a>
+            <a class="tab">🎬 Analyze</a>
+            <a class="tab">🎓 Review <span class="dot"></span></a>
+          </div>
+          <span class="spacer"></span>
+          <span class="status-chip">• Review Started</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Variant 2: avatars-only with names underneath -->
+    <div class="variant">
+      <div class="variant-label">Variant 2 · Avatar stack (name under each)</div>
+      <div class="workspace">
+        <div class="row">
+          <a class="session-chip"><span class="back">←</span><span class="label">Monday Night Rec</span></a>
+          <span class="spacer"></span>
+          <span class="game-nav"><span class="arrow-btn">‹</span><span class="pos">Game 2 of 2</span><span class="arrow-btn disabled">›</span></span>
+        </div>
+        <div class="row">
+          <span class="title">Game 2</span>
+          <span class="spacer"></span>
+          <span style="display:inline-flex; gap:14px;">
+            <span class="roster-avatar"><span class="mini-avatar">RW</span><span class="n">Ron</span></span>
+            <span class="roster-avatar"><span class="mini-avatar">GW</span><span class="n">Geoff</span></span>
+            <span class="roster-avatar"><span class="mini-avatar">CG</span><span class="n">Celeste</span></span>
+            <span class="roster-avatar"><span class="mini-avatar">JN</span><span class="n">Jelena</span></span>
+          </span>
+        </div>
+        <div class="row">
+          <div class="tabs">
+            <a class="tab active">📊 Game Stats</a>
+            <a class="tab">🎬 Analyze</a>
+            <a class="tab">🎓 Review <span class="dot"></span></a>
+          </div>
+          <span class="spacer"></span>
+          <span class="status-chip">• Review Started</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Variant 2a: bigger headshot-style stack -->
+    <div class="variant">
+      <div class="variant-label">Variant 2a · Bigger headshots with subtle rating under the name</div>
+      <div class="workspace">
+        <div class="row">
+          <a class="session-chip"><span class="back">←</span><span class="label">Monday Night Rec</span></a>
+          <span class="spacer"></span>
+          <span class="game-nav"><span class="arrow-btn">‹</span><span class="pos">Game 2 of 2</span><span class="arrow-btn disabled">›</span></span>
+        </div>
+        <div class="row">
+          <span class="title">Game 2</span>
+          <span class="spacer"></span>
+          <span style="display:inline-flex; gap:18px;">
+            <span class="roster-avatar">
+              <span class="mini-avatar" style="width:36px; height:36px; font-size:12px;">RW</span>
+              <span class="n" style="font-weight:600; color:var(--ink);">Ron</span>
+              <span style="font-size:10px; color:var(--faint); margin-top:-2px;">4.28</span>
+            </span>
+            <span class="roster-avatar">
+              <span class="mini-avatar" style="width:36px; height:36px; font-size:12px;">GW</span>
+              <span class="n" style="font-weight:600; color:var(--ink);">Geoff</span>
+              <span style="font-size:10px; color:var(--faint); margin-top:-2px;">3.94</span>
+            </span>
+            <span class="roster-avatar">
+              <span class="mini-avatar" style="width:36px; height:36px; font-size:12px;">CG</span>
+              <span class="n" style="font-weight:600; color:var(--ink);">Celeste</span>
+              <span style="font-size:10px; color:var(--faint); margin-top:-2px;">4.05</span>
+            </span>
+            <span class="roster-avatar">
+              <span class="mini-avatar" style="width:36px; height:36px; font-size:12px;">JN</span>
+              <span class="n" style="font-weight:600; color:var(--ink);">Jelena</span>
+              <span style="font-size:10px; color:var(--faint); margin-top:-2px;">3.71</span>
+            </span>
+          </span>
+        </div>
+        <div class="row">
+          <div class="tabs">
+            <a class="tab active">📊 Game Stats</a>
+            <a class="tab">🎬 Analyze</a>
+            <a class="tab">🎓 Review <span class="dot"></span></a>
+          </div>
+          <span class="spacer"></span>
+          <span class="status-chip">• Review Started</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Variant 2b: same V2 layout but clickable button-style avatars -->
+    <div class="variant">
+      <div class="variant-label">Variant 2b · V2 feel, but the avatars read as clickable (→ player page)</div>
+      <div class="workspace">
+        <div class="row">
+          <a class="session-chip"><span class="back">←</span><span class="label">Monday Night Rec</span></a>
+          <span class="spacer"></span>
+          <span class="game-nav"><span class="arrow-btn">‹</span><span class="pos">Game 2 of 2</span><span class="arrow-btn disabled">›</span></span>
+        </div>
+        <div class="row">
+          <span class="title">Game 2</span>
+          <span class="spacer"></span>
+          <span style="display:inline-flex; gap:12px;">
+            <a class="roster-avatar" title="Open Ron's player page" style="text-decoration:none; padding:4px 8px; border-radius:10px; cursor:pointer;" onmouseover="this.style.background='#f0f4ff'" onmouseout="this.style.background='transparent'">
+              <span class="mini-avatar" style="border:2px solid #fff; box-shadow:0 0 0 1px var(--line);">RW</span>
+              <span class="n" style="color:var(--blue); font-weight:600;">Ron</span>
+            </a>
+            <a class="roster-avatar" title="Open Geoff's player page" style="text-decoration:none; padding:4px 8px; border-radius:10px; cursor:pointer;" onmouseover="this.style.background='#f0f4ff'" onmouseout="this.style.background='transparent'">
+              <span class="mini-avatar" style="border:2px solid #fff; box-shadow:0 0 0 1px var(--line);">GW</span>
+              <span class="n" style="color:var(--blue); font-weight:600;">Geoff</span>
+            </a>
+            <a class="roster-avatar" title="Open Celeste's player page" style="text-decoration:none; padding:4px 8px; border-radius:10px; cursor:pointer;" onmouseover="this.style.background='#f0f4ff'" onmouseout="this.style.background='transparent'">
+              <span class="mini-avatar" style="border:2px solid #fff; box-shadow:0 0 0 1px var(--line);">CG</span>
+              <span class="n" style="color:var(--blue); font-weight:600;">Celeste</span>
+            </a>
+            <a class="roster-avatar" title="Open Jelena's player page" style="text-decoration:none; padding:4px 8px; border-radius:10px; cursor:pointer;" onmouseover="this.style.background='#f0f4ff'" onmouseout="this.style.background='transparent'">
+              <span class="mini-avatar" style="border:2px solid #fff; box-shadow:0 0 0 1px var(--line);">JN</span>
+              <span class="n" style="color:var(--blue); font-weight:600;">Jelena</span>
+            </a>
+          </span>
+        </div>
+        <div class="row">
+          <div class="tabs">
+            <a class="tab active">📊 Game Stats</a>
+            <a class="tab">🎬 Analyze</a>
+            <a class="tab">🎓 Review <span class="dot"></span></a>
+          </div>
+          <span class="spacer"></span>
+          <span class="status-chip">• Review Started</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Variant 3: dot-separated names, no avatars -->
+    <div class="variant">
+      <div class="variant-label">Variant 3 · Inline names · minimal</div>
+      <div class="workspace">
+        <div class="row">
+          <a class="session-chip"><span class="back">←</span><span class="label">Monday Night Rec</span></a>
+          <span class="spacer"></span>
+          <span class="game-nav"><span class="arrow-btn">‹</span><span class="pos">Game 2 of 2</span><span class="arrow-btn disabled">›</span></span>
+        </div>
+        <div class="row">
+          <span class="title">Game 2</span>
+          <span class="roster-names-inline" style="margin-left:12px;">
+            <span class="pn">Ron</span><span class="dot-sep">·</span>
+            <span class="pn">Geoff</span><span class="dot-sep">·</span>
+            <span class="pn">Celeste</span><span class="dot-sep">·</span>
+            <span class="pn">Jelena</span>
+          </span>
+        </div>
+        <div class="row">
+          <div class="tabs">
+            <a class="tab active">📊 Game Stats</a>
+            <a class="tab">🎬 Analyze</a>
+            <a class="tab">🎓 Review <span class="dot"></span></a>
+          </div>
+          <span class="spacer"></span>
+          <span class="status-chip">• Review Started</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Variant 4: avatar cluster, names on hover / tooltip -->
+    <div class="variant">
+      <div class="variant-label">Variant 4 · Compact avatar cluster (names in title/tooltip)</div>
+      <div class="workspace">
+        <div class="row">
+          <a class="session-chip"><span class="back">←</span><span class="label">Monday Night Rec</span></a>
+          <span class="spacer"></span>
+          <span class="game-nav"><span class="arrow-btn">‹</span><span class="pos">Game 2 of 2</span><span class="arrow-btn disabled">›</span></span>
+        </div>
+        <div class="row">
+          <span class="title">Game 2</span>
+          <span style="margin-left:12px; display:inline-flex; align-items:center; gap:4px;">
+            <span class="mini-avatar" style="background:#8899a6;" title="Ron">RW</span>
+            <span class="mini-avatar" style="background:#8899a6;" title="Geoff">GW</span>
+            <span class="mini-avatar" style="background:#8899a6;" title="Celeste">CG</span>
+            <span class="mini-avatar" style="background:#8899a6;" title="Jelena">JN</span>
+            <span style="margin-left:6px; font-size:12px; color:var(--muted);">Ron · Geoff · Celeste · Jelena</span>
+          </span>
+        </div>
+        <div class="row">
+          <div class="tabs">
+            <a class="tab active">📊 Game Stats</a>
+            <a class="tab">🎬 Analyze</a>
+            <a class="tab">🎓 Review <span class="dot"></span></a>
+          </div>
+          <span class="spacer"></span>
+          <span class="status-chip">• Review Started</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ────────── Nav journey ────────── -->
+    <h2>Nav chain from this bar</h2>
+    <p class="note">
+      From any game view, the user can:
+    </p>
+    <ul style="color:var(--muted); font-size:13px;">
+      <li><b>← session chip</b> → back to SessionDetailPage</li>
+      <li><b>⏴⏵ arrows</b> → jump to prev/next game in the same session without bouncing</li>
+      <li><b>tab row</b> → switch mode (Overview / Analyze / Review) in place</li>
+      <li><b>✕ on drill chip</b> (Review only) → back to review overview for this game</li>
+      <li><b>status chip</b> → passive, but shows "Review Started" / "not started" / "• N sequences · M flags"</li>
+    </ul>
+  </div>
+</body>
+</html>

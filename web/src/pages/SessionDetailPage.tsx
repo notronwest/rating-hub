@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { supabase } from "../supabase";
+import { useAuth } from "../auth/AuthProvider";
 import { computeHighlights, GameHighlightsCompact, type GameHighlightData } from "../components/GameHighlights";
 import type { GamePlayerShotType } from "../types/database";
 
@@ -34,6 +35,7 @@ interface GamePlayerInfo {
 export default function SessionDetailPage() {
   const { orgId, sessionId } = useParams();
   const [searchParams] = useSearchParams();
+  const { user, loading: authLoading } = useAuth();
   const fromPlayer = searchParams.get("from") === "player";
   const playerSlug = searchParams.get("slug");
   const playerQuery = fromPlayer && playerSlug ? `?from=player&slug=${playerSlug}` : "";
@@ -43,6 +45,8 @@ export default function SessionDetailPage() {
   const [playerNames, setPlayerNames] = useState<Map<string, string>>(new Map());
   const [ralliesByGame, setRalliesByGame] = useState<Map<string, { shot_count: number | null }[]>>(new Map());
   const [shotTypesByGame, setShotTypesByGame] = useState<Map<string, GamePlayerShotType[]>>(new Map());
+  // game_id -> true if a coach review has content (sequence, flag, or note)
+  const [gamesWithReview, setGamesWithReview] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -120,6 +124,81 @@ export default function SessionDetailPage() {
       setLoading(false);
     })();
   }, [sessionId]);
+
+  // Fetch review status separately: game_analyses + its content tables are
+  // RLS-gated (private analyses require org access), so we must wait for
+  // auth to be ready before querying. Doing it alongside the non-auth data
+  // above would fire the query as anon and silently return empty, which
+  // made every game render as "Review Not Started".
+  useEffect(() => {
+    if (authLoading) {
+      console.log("[review-status] waiting for auth");
+      return;
+    }
+    if (!user) {
+      console.log("[review-status] not signed in — all reviews will show Not Started");
+      return;
+    }
+    if (games.length === 0) return;
+    let cancelled = false;
+
+    (async () => {
+      const gameIds = games.map((g) => g.id);
+      const { data: analyses, error: aErr } = await supabase
+        .from("game_analyses")
+        .select("id, game_id")
+        .in("game_id", gameIds);
+      console.log("[review-status] analyses query", {
+        gameIds,
+        count: analyses?.length ?? 0,
+        error: aErr?.message,
+      });
+      if (cancelled || !analyses || analyses.length === 0) return;
+
+      const analysisIds = analyses.map((a) => a.id);
+      const analysisToGame = new Map(analyses.map((a) => [a.id, a.game_id]));
+
+      const [seqRes, flagRes, noteRes] = await Promise.all([
+        supabase
+          .from("game_analysis_sequences")
+          .select("analysis_id")
+          .in("analysis_id", analysisIds),
+        supabase
+          .from("analysis_flagged_shots")
+          .select("analysis_id")
+          .in("analysis_id", analysisIds),
+        supabase
+          .from("game_analysis_notes")
+          .select("analysis_id")
+          .in("analysis_id", analysisIds),
+      ]);
+      if (cancelled) return;
+      console.log("[review-status] content counts", {
+        sequences: seqRes.data?.length ?? 0,
+        sequencesError: seqRes.error?.message,
+        flags: flagRes.data?.length ?? 0,
+        flagsError: flagRes.error?.message,
+        notes: noteRes.data?.length ?? 0,
+        notesError: noteRes.error?.message,
+      });
+
+      const withContent = new Set<string>();
+      for (const row of [
+        ...(seqRes.data ?? []),
+        ...(flagRes.data ?? []),
+        ...(noteRes.data ?? []),
+      ]) {
+        const gameId = analysisToGame.get(row.analysis_id);
+        if (gameId) withContent.add(gameId);
+      }
+      console.log("[review-status] games with review:", Array.from(withContent));
+      setGamesWithReview(withContent);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [games, user, authLoading]);
 
   if (loading) return <p>Loading…</p>;
   if (!session) return <p>Session not found.</p>;
@@ -272,13 +351,34 @@ export default function SessionDetailPage() {
                 <td style={{ ...tdStyle, textAlign: "center", color: "#666", verticalAlign: "top", paddingTop: 14 }}>
                   {g.total_rallies ?? "—"}
                 </td>
-                <td style={{ ...tdStyle, textAlign: "right", verticalAlign: "top", paddingTop: 14 }}>
-                  <Link
-                    to={`/org/${orgId}/games/${g.id}${playerQuery}`}
-                    style={{ fontSize: 12, color: "#888", textDecoration: "none" }}
-                  >
-                    Details →
-                  </Link>
+                <td style={{ ...tdStyle, textAlign: "right", verticalAlign: "top", paddingTop: 10 }}>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "stretch", gap: 6, minWidth: 170 }}>
+                    <Link
+                      to={`/org/${orgId}/games/${g.id}${playerQuery}`}
+                      style={dashboardBtnStyle({
+                        variant: "neutral",
+                      })}
+                    >
+                      <span>📊 Details</span>
+                      <span style={{ opacity: 0.6, fontSize: 11 }}>→</span>
+                    </Link>
+                    <Link
+                      to={`/org/${orgId}/games/${g.id}/coach-review${playerQuery}`}
+                      title={
+                        gamesWithReview.has(g.id)
+                          ? "Continue coach review"
+                          : "Start a coach review"
+                      }
+                      style={dashboardBtnStyle({
+                        variant: gamesWithReview.has(g.id) ? "filled" : "outline",
+                      })}
+                    >
+                      <span>
+                        ⭐ {gamesWithReview.has(g.id) ? "Review Started" : "Review Not Started"}
+                      </span>
+                      <span style={{ opacity: 0.7, fontSize: 11 }}>→</span>
+                    </Link>
+                  </div>
                 </td>
               </tr>
             );
@@ -287,4 +387,48 @@ export default function SessionDetailPage() {
       </table>
     </div>
   );
+}
+
+function dashboardBtnStyle({
+  variant,
+}: {
+  variant: "filled" | "outline" | "neutral";
+}): React.CSSProperties {
+  const base: React.CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    padding: "8px 12px",
+    fontSize: 12,
+    fontWeight: 600,
+    textDecoration: "none",
+    borderRadius: 6,
+    whiteSpace: "nowrap",
+    lineHeight: 1.2,
+  };
+  if (variant === "filled") {
+    return {
+      ...base,
+      background: "#7c3aed",
+      color: "#fff",
+      border: "1px solid #7c3aed",
+      boxShadow: "0 1px 2px rgba(124, 58, 237, 0.25)",
+    };
+  }
+  if (variant === "outline") {
+    return {
+      ...base,
+      background: "#fff",
+      color: "#7c3aed",
+      border: "1px dashed #c4b5fd",
+    };
+  }
+  // neutral
+  return {
+    ...base,
+    background: "#fff",
+    color: "#444",
+    border: "1px solid #ddd",
+  };
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { supabase } from "../supabase";
 import { useAuth } from "../auth/AuthProvider";
 import {
@@ -9,6 +9,7 @@ import {
   flagShot,
   unflagShot,
   setGameMuxPlaybackId,
+  setDismissedLossKeys,
 } from "../lib/coachApi";
 import { pbvPosterUrl } from "../lib/pbvVideo";
 import type { GameAnalysis, AnalysisSequence, FlaggedShot } from "../types/coach";
@@ -17,14 +18,12 @@ import { useVideoPopout } from "../hooks/useVideoPopout";
 import VideoUrlInput from "../components/analyze/VideoUrlInput";
 import ShotSequence from "../components/analyze/ShotSequence";
 import RallyStrip from "../components/analyze/RallyStrip";
-import PlayerFocusBar from "../components/analyze/PlayerFocusBar";
 import ShotTooltip from "../components/analyze/ShotTooltip";
 import SequenceManager from "../components/analyze/SequenceManager";
 import FlaggedShotsPanel from "../components/analyze/FlaggedShotsPanel";
 import PlayerHeaderBar from "../components/analyze/PlayerHeaderBar";
-import GameWorkspaceHeader from "../components/analyze/GameWorkspaceHeader";
-import TeamStatsBlock from "../components/game/TeamStatsBlock";
-import type { RallyShot, GamePlayer, GamePlayerShotType } from "../types/database";
+import GameHeader from "../components/GameHeader";
+import type { RallyShot, GamePlayer } from "../types/database";
 
 interface GameRow {
   id: string;
@@ -77,7 +76,6 @@ export default function AnalyzePage() {
   const [rallies, setRallies] = useState<RallyRow[]>([]);
   const [shots, setShots] = useState<RallyShot[]>([]);
   const [gamePlayers, setGamePlayers] = useState<GamePlayer[]>([]);
-  const [shotTypes, setShotTypes] = useState<GamePlayerShotType[]>([]);
   const [analysis, setAnalysis] = useState<GameAnalysis | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -85,12 +83,15 @@ export default function AnalyzePage() {
   const [activeShotId, setActiveShotId] = useState<string | null>(null);
   const [isLooping, setIsLooping] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
+  // In-video shot tag overlay — off by default; can be distracting while reviewing
+  const [showShotOverlay, setShowShotOverlay] = useState(false);
 
   // Filters
-  const [focusedPlayerIndex, setFocusedPlayerIndex] = useState<number | null>(null);
+  // Focus filter retained so SequenceManager + filter logic below still compile;
+  // the UI toggle (PlayerFocusBar) was removed so it stays at null.
+  const [focusedPlayerIndex] = useState<number | null>(null);
   // Rally explicitly selected by clicking the rally strip (overrides "current time" rally)
   const [selectedRallyId, setSelectedRallyId] = useState<string | null>(null);
-  const [rallyLoop, setRallyLoop] = useState(true);
 
   // Sequences
   const [sequences, setSequences] = useState<AnalysisSequence[]>([]);
@@ -158,13 +159,6 @@ export default function AnalyzePage() {
         .eq("game_id", gameId)
         .order("player_index");
       if (!cancelled) setGamePlayers((gpFull as GamePlayer[] | null) ?? []);
-
-      // Fetch per-player shot-type breakdowns for team stats
-      const { data: st } = await supabase
-        .from("game_player_shot_types")
-        .select("*")
-        .eq("game_id", gameId);
-      if (!cancelled) setShotTypes((st as GamePlayerShotType[] | null) ?? []);
 
       // Fetch rallies
       const { data: ral } = await supabase
@@ -383,6 +377,24 @@ export default function AnalyzePage() {
     setIsPaused((p) => !p);
   }
 
+  async function handleToggleDismissFault(shot: RallyShot, dismissed: boolean) {
+    if (!analysis) return;
+    const key = `loss:${shot.rally_id}:${shot.id}`;
+    const current = analysis.dismissed_loss_keys ?? [];
+    const next = dismissed
+      ? Array.from(new Set([...current, key]))
+      : current.filter((k) => k !== key);
+    // Optimistic update so the button flips immediately
+    setAnalysis((a) => (a ? { ...a, dismissed_loss_keys: next } : a));
+    try {
+      await setDismissedLossKeys(analysis.id, next);
+    } catch (e) {
+      // Roll back on failure
+      setAnalysis((a) => (a ? { ...a, dismissed_loss_keys: current } : a));
+      alert(`Failed to update: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   // Loop effect: when looping a specific shot, seek back to its start when the
   // playhead goes past its end. Shot loop takes precedence over rally loop.
   useEffect(() => {
@@ -395,10 +407,10 @@ export default function AnalyzePage() {
     }
   }, [currentMs, isLooping, activeShotId, shots]);
 
-  // Rally loop: when a rally is explicitly selected AND rallyLoop is on AND
-  // no shot is actively looping, keep the selected rally playing on repeat.
+  // Rally loop: when a rally is explicitly selected and no shot/sequence is
+  // actively looping, keep the selected rally playing on repeat.
   useEffect(() => {
-    if (!rallyLoop || !selectedRallyId) return;
+    if (!selectedRallyId) return;
     if (activeShotId && isLooping) return; // shot loop wins
     if (activeSequenceId || draftShotIds.size > 0) return; // sequence loop wins
     const rally = rallies.find((r) => r.id === selectedRallyId);
@@ -407,7 +419,7 @@ export default function AnalyzePage() {
     if (currentMs > rally.end_ms + endBuffer) {
       videoRef.seek(rally.start_ms);
     }
-  }, [currentMs, rallyLoop, selectedRallyId, activeShotId, isLooping, activeSequenceId, draftShotIds, rallies]);
+  }, [currentMs, selectedRallyId, activeShotId, isLooping, activeSequenceId, draftShotIds, rallies]);
 
   // Auto-play the draft whenever shots are added/removed while building.
   // Jumps to the earliest shot's start and plays, so the sequence-loop effect
@@ -529,17 +541,25 @@ export default function AnalyzePage() {
       )
     : new Set<string>();
 
-  // Fault-ending shots across the whole game — any shot whose PB Vision raw
-  // data carries an `err` field. Used to highlight the point-ending mistake
-  // in the shot list, matching the fault dot on the rally strip.
+  // Fault-ending shots across the whole game — only the rally-ending shot
+  // (is_final) that carries an `err` is the actual fault. Mid-rally shots
+  // can also carry `err` (PB Vision tags them when the stroke deviates), but
+  // they shouldn't light up the shot list; otherwise several shots in a rally
+  // read as "fault" when only the last one ended the point.
   const faultShotIds = new Set(
     shots
       .filter((s) => {
+        if (!s.is_final) return false;
         const raw = (s.raw_data ?? {}) as Record<string, unknown>;
         return !!raw.err;
       })
       .map((s) => s.id),
   );
+
+  // Losses the coach has marked "not significant" — shared with Coach Review
+  // via the `game_analyses.dismissed_loss_keys` array. Keys are of the form
+  // `loss:<rally_id>:<shot_id>`.
+  const dismissedLossKeys = new Set(analysis?.dismissed_loss_keys ?? []);
 
   // The currently "playing" shot (for the video tooltip overlay) — based on currentMs
   const playingShot = shots.find(
@@ -551,61 +571,12 @@ export default function AnalyzePage() {
 
   return (
     <div style={{ maxWidth: 1400 }}>
-      <GameWorkspaceHeader
-        orgId={orgId ?? ""}
-        gameId={gameId ?? ""}
-        mode="analyze"
-        title={game.session_name || game.pbvision_video_id}
-        score={{ team0: game.team0_score, team1: game.team1_score }}
-      />
+      <GameHeader orgId={orgId ?? ""} gameId={gameId ?? ""} mode="analyze" />
 
       {/* Player header — expandable chips with name + stats bar */}
       {players.length > 0 && gamePlayers.length > 0 && (
         <div style={{ marginBottom: 16 }}>
           <PlayerHeaderBar players={players} gamePlayers={gamePlayers} />
-        </div>
-      )}
-
-      {/* Coach Review entry point */}
-      {rallies.length > 0 && shots.length > 0 && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "12px 16px",
-            background: "linear-gradient(90deg, #fff7e6 0%, #f0f4ff 100%)",
-            border: "1px solid #f0d169",
-            borderRadius: 10,
-            marginBottom: 20,
-          }}
-        >
-          <div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: "#7a5d00", marginBottom: 2 }}>
-              ⭐ Coach Review
-            </div>
-            <div style={{ fontSize: 12, color: "#555" }}>
-              Pick a player and walk through their rally losses + flagged shots,
-              with per-player loss breakdowns.
-            </div>
-          </div>
-          <Link
-            to={`/org/${orgId}/games/${gameId}/coach-review`}
-            style={{
-              padding: "10px 18px",
-              fontSize: 13,
-              fontWeight: 700,
-              background: "#1a73e8",
-              color: "#fff",
-              borderRadius: 6,
-              textDecoration: "none",
-              whiteSpace: "nowrap",
-              flexShrink: 0,
-              marginLeft: 16,
-            }}
-          >
-            Start Coach Review →
-          </Link>
         </div>
       )}
 
@@ -620,11 +591,11 @@ export default function AnalyzePage() {
             flags={flags}
             activeRallyId={currentRally?.id ?? null}
             currentMs={currentMs}
-            rallyLoop={rallyLoop}
-            onToggleRallyLoop={() => setRallyLoop((v) => !v)}
             onRallyClick={(r) => {
               setSelectedRallyId(r.id);
               setActiveShotId(null); // clear shot selection so rally loop takes effect
+              setActiveSequenceId(null); // clear active sequence so the sequence loop stops and rally playback wins
+              setDraftShotIds(new Set()); // and any in-flight sequence-build selection
               videoRef.seek(r.start_ms);
               setCurrentMs(r.start_ms);
               videoRef.setPlaybackRate(playbackRate);
@@ -698,7 +669,9 @@ export default function AnalyzePage() {
                     posterUrl={posterUrl}
                     onTimeUpdate={setCurrentMs}
                   />
-                  <ShotTooltip shot={playingShot} player={playingShotPlayer} />
+                  {showShotOverlay && (
+                    <ShotTooltip shot={playingShot} player={playingShotPlayer} />
+                  )}
                 </div>
 
                 <div style={{ marginTop: 6, display: "flex", gap: 8, alignItems: "center" }}>
@@ -722,6 +695,26 @@ export default function AnalyzePage() {
                   >
                     ⧉ Pop out to new tab
                   </button>
+                  <button
+                    onClick={() => setShowShotOverlay((v) => !v)}
+                    title="Toggle the shot-tag pill overlaid on the video"
+                    style={{
+                      padding: "5px 12px",
+                      fontSize: 12,
+                      fontWeight: showShotOverlay ? 700 : 500,
+                      background: showShotOverlay ? "#1a73e8" : "#fff",
+                      color: showShotOverlay ? "#fff" : "#555",
+                      borderTop: `1px solid ${showShotOverlay ? "#1a73e8" : "#ddd"}`,
+                      borderBottom: `1px solid ${showShotOverlay ? "#1a73e8" : "#ddd"}`,
+                      borderLeft: `1px solid ${showShotOverlay ? "#1a73e8" : "#ddd"}`,
+                      borderRight: `1px solid ${showShotOverlay ? "#1a73e8" : "#ddd"}`,
+                      borderRadius: 6,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    🏷 Shot tags {showShotOverlay ? "on" : "off"}
+                  </button>
                   <span style={{ fontSize: 11, color: "#999", marginLeft: "auto" }}>
                     <kbd style={kbdStyle}>Space</kbd> play/pause ·{" "}
                     <kbd style={kbdStyle}>[</kbd> prev ·{" "}
@@ -731,15 +724,8 @@ export default function AnalyzePage() {
               </div>
             )}
 
-            {/* Right: shot list for the current rally, with focus filter on top */}
+            {/* Right: shot list for the current rally */}
             <div>
-              <div style={{ marginBottom: 8 }}>
-                <PlayerFocusBar
-                  players={players}
-                  focusedPlayerIndex={focusedPlayerIndex}
-                  onFocus={setFocusedPlayerIndex}
-                />
-              </div>
               <ShotSequence
                 rally={currentRally}
                 shots={currentRallyShots}
@@ -762,6 +748,8 @@ export default function AnalyzePage() {
                 onToggleFlag={handleToggleFlag}
                 savedSequenceShotIds={savedSequenceShotIds}
                 faultShotIds={faultShotIds}
+                dismissedLossKeys={dismissedLossKeys}
+                onToggleDismissFault={handleToggleDismissFault}
               />
             </div>
           </div>
@@ -799,23 +787,19 @@ export default function AnalyzePage() {
                 onJumpToShot={handleJumpToFlaggedShot}
                 onUnflag={handleToggleFlag}
                 onReload={reloadNotes}
+                onPromoted={(seqId) => {
+                  // reloadNotes has already been called; push the
+                  // sequence id into the URL so the existing
+                  // ?sequence=<id> effect activates it once the
+                  // sequences state has caught up.
+                  const next = new URLSearchParams(searchParams);
+                  next.set("sequence", seqId);
+                  setSearchParams(next, { replace: true });
+                }}
               />
             </div>
           )}
 
-          {/* Team stats — below the game */}
-          {gamePlayers.length > 0 && (
-            <div style={{ marginTop: 24 }}>
-              <TeamStatsBlock
-                players={players}
-                gamePlayers={gamePlayers}
-                shotTypes={shotTypes}
-                rallies={rallies}
-                team0KitchenPct={game.team0_kitchen_pct}
-                team1KitchenPct={game.team1_kitchen_pct}
-              />
-            </div>
-          )}
         </>
       ) : (
         <VideoUrlInput

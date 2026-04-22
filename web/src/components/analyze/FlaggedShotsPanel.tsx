@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { RallyShot } from "../../types/database";
 import type { FlaggedShot } from "../../types/coach";
-import { updateFlagFptm } from "../../lib/coachApi";
+import { updateFlagFptm, promoteFlagToSequence } from "../../lib/coachApi";
 import { formatMs } from "../../lib/pbvVideo";
 import FptmEditor from "./FptmEditor";
 import { summarizeFptm, type FptmValue } from "../../lib/fptm";
@@ -25,20 +25,21 @@ interface Props {
   onJumpToShot: (shot: RallyShot) => void;
   onUnflag: (shotId: string) => void;
   onReload: () => void;
+  onPromoted?: (sequenceId: string) => void;
 }
 
 const SHOT_COLORS: Record<string, string> = {
   serve: "#e8710a",
   return: "#0d904f",
   third: "#9334e6",
-  drive: "#ef5350",
+  drive: "#5e35b1",
   dink: "#4caf50",
   drop: "#29b6f6",
   lob: "#fdd835",
-  smash: "#d93025",
+  smash: "#303f9f",
   volley: "#7e57c2",
   reset: "#00bcd4",
-  speedup: "#ff5722",
+  speedup: "#ef6c00",
 };
 
 export default function FlaggedShotsPanel({
@@ -49,6 +50,7 @@ export default function FlaggedShotsPanel({
   onJumpToShot,
   onUnflag,
   onReload,
+  onPromoted,
 }: Props) {
   const [open, setOpen] = useState(true);
 
@@ -111,11 +113,13 @@ export default function FlaggedShotsPanel({
               key={flag.id}
               flag={flag}
               shot={shot}
+              allShots={shots}
               rallyNumber={rally ? rally.rally_index + 1 : undefined}
               player={player ?? null}
               onJump={() => onJumpToShot(shot)}
               onUnflag={() => onUnflag(shot.id)}
               onReload={onReload}
+              onPromoted={onPromoted}
             />
           ))}
         </div>
@@ -127,24 +131,42 @@ export default function FlaggedShotsPanel({
 function FlagRow({
   flag,
   shot,
+  allShots,
   rallyNumber,
   player,
   onJump,
   onUnflag,
   onReload,
+  onPromoted,
 }: {
   flag: FlaggedShot;
   shot: RallyShot;
+  allShots: RallyShot[];
   rallyNumber?: number;
   player: PlayerInfo | null;
   onJump: () => void;
   onUnflag: () => void;
   onReload: () => void;
+  onPromoted?: (sequenceId: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [fptmDraft, setFptmDraft] = useState<FptmValue>(flag.fptm ?? {});
   const [drillsDraft, setDrillsDraft] = useState<string | null>(flag.drills ?? null);
   const [saving, setSaving] = useState(false);
+  const [promoting, setPromoting] = useState(false);
+
+  async function promote(before: number, after: number) {
+    setPromoting(true);
+    try {
+      const seq = await promoteFlagToSequence({ flag, shots: allShots, before, after });
+      onReload();
+      onPromoted?.(seq.id);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setPromoting(false);
+    }
+  }
 
   const color = SHOT_COLORS[shot.shot_type ?? "shot"] ?? "#757575";
   const fptmSummary = summarizeFptm(flag.fptm);
@@ -266,6 +288,33 @@ function FlagRow({
             >
               {hasDiagnosis ? "Edit diagnosis" : "Diagnose (FPTM)"}
             </button>
+            <span style={{ fontSize: 10, color: "#bbb" }}>|</span>
+            <span style={{ fontSize: 10, color: "#888" }}>Make sequence:</span>
+            {[
+              { before: 2, after: 2, label: "±2" },
+              { before: 3, after: 3, label: "±3" },
+            ].map((w) => (
+              <button
+                key={w.label}
+                onClick={() => promote(w.before, w.after)}
+                disabled={promoting}
+                title={`Create a sequence with ${w.before} shots before + flagged shot + ${w.after} after`}
+                style={{
+                  padding: "2px 8px",
+                  fontSize: 10,
+                  fontWeight: 600,
+                  background: "#fff",
+                  color: "#7a5d00",
+                  border: "1px solid #f0d169",
+                  borderRadius: 3,
+                  cursor: promoting ? "wait" : "pointer",
+                  fontFamily: "inherit",
+                  opacity: promoting ? 0.6 : 1,
+                }}
+              >
+                {w.label}
+              </button>
+            ))}
           </div>
         )}
       </div>

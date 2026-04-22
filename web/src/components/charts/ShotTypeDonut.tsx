@@ -5,7 +5,7 @@ interface Props {
 }
 
 const COLORS: Record<string, string> = {
-  drive: "#ef5350",
+  drive: "#5e35b1",
   dink: "#4caf50",
   reset: "#7e57c2",
   drop: "#29b6f6",
