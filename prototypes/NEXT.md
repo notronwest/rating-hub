@@ -1,11 +1,34 @@
 # Where we left off — resume tomorrow
 
-## To continue this work on another machine
+## Latest prototype: Review page redesign — Hybrid (B+C)
 ```bash
-git pull
-open prototypes/review-points-aligned.html      # pick up here — Variant E is the chosen direction
+open prototypes/review-hybrid-H.html
 ```
-Then tell the next Claude session: "Continuing the Review Points work — Variant E from `prototypes/review-points-aligned.html` is the target. Build it for real under the Analyze page video."
+Full per-player Review redesign matching the coach workflow codified in
+`../CLAUDE.md` (Coach Workflow section). Shape:
+
+1. **Top:** game/session context + Analyze/Review tab toggle + player picker.
+2. **Player hero:** avatar, name, progress bar, headline metrics chips.
+3. **📊 Start here — WMPC Analysis** — global feedback cards per WMPC
+   analysis point (First-4-Shots Script, Defensive Beats; more to come).
+   Each card has drill-down rates, a global coaching note + Save, and a
+   "Promote N misses to queue" button that enqueues instances as review
+   items once promoted.
+4. **📋 Review Queue** — unified vertical stack. One-line collapsed rows
+   (status dot, kind badge, title, rally pill, tags). Clicking any row
+   makes it active and expands inline: video clip loop (±N shots around
+   the key moment, toggle for whole rally) + playlist controls when the
+   item covers multiple instances + FPTM diagnosis + tag picker + instance
+   notes + drills + Skip/Save/Save & next actions. Filter chips at top.
+5. **🎓 Report card** — always present at bottom, wakes up when queue done.
+
+Prototype is interactive enough to click rows open/closed, toggle FPTM tone,
+toggle tags. Review before we commit to building it for real.
+
+## Previous work
+```bash
+open prototypes/review-points-aligned.html      # Review Points "Variant E" sketch (superseded)
+```
 
 ---
 

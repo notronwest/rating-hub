@@ -1,0 +1,776 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Prototype · Review — Hybrid (B+C)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    --bg: #f4f6f8;
+    --surface: #ffffff;
+    --line: #e2e2e2;
+    --line-soft: #eee;
+    --text: #222;
+    --muted: #666;
+    --muted-2: #8a8a8a;
+    --muted-3: #bbb;
+    --ok: #1e7e34;
+    --ok-soft: #e6f4ea;
+    --warn: #d97706;
+    --warn-soft: #fff3cd;
+    --bad: #c62828;
+    --bad-soft: #fce8e6;
+    --neutral: #6b7280;
+    --neutral-soft: #f1f3f5;
+    --blue: #1a73e8;
+    --blue-soft: #e8f0fe;
+    --purple: #7c3aed;
+    --team0: #1a73e8;
+    --team1: #f59e0b;
+  }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); }
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 14px; line-height: 1.4; }
+  .app { max-width: 1180px; margin: 0 auto; padding: 16px 20px 80px; }
+
+  /* Top bar ------------------------------------------------------- */
+  .topbar {
+    display: flex; align-items: center; gap: 16px;
+    padding: 12px 16px; background: var(--surface);
+    border: 1px solid var(--line); border-radius: 10px; margin-bottom: 14px;
+  }
+  .backlink { color: var(--muted); font-size: 12px; text-decoration: none; }
+  .tabs { display: inline-flex; gap: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #fafafa; }
+  .tab { padding: 7px 14px; font-size: 13px; font-weight: 600; color: var(--muted); background: transparent; border: none; border-right: 1px solid var(--line); cursor: pointer; }
+  .tab:last-child { border-right: none; }
+  .tab.active { background: var(--surface); color: var(--blue); font-weight: 700; }
+  .tab small { display: block; font-size: 10px; color: var(--muted-2); font-weight: 400; }
+
+  .player-picker { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  .select {
+    padding: 6px 10px; font-size: 13px; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--surface); font-family: inherit;
+  }
+
+  /* Player hero --------------------------------------------------- */
+  .player-hero {
+    display: grid; grid-template-columns: auto 1fr auto;
+    gap: 14px; align-items: center;
+    padding: 14px 16px; background: var(--surface);
+    border: 1px solid var(--line); border-radius: 10px; margin-bottom: 14px;
+  }
+  .player-hero .avatar {
+    width: 56px; height: 56px; border-radius: 50%;
+    background: var(--team0); color: #fff;
+    display: grid; place-items: center; font-weight: 700; font-size: 20px;
+    border: 2px solid var(--team0);
+  }
+  .player-hero .name { font-size: 20px; font-weight: 700; line-height: 1.1; }
+  .player-hero .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .player-hero .stats { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .stat-pill {
+    padding: 4px 10px; border-radius: 12px; background: #fff; border: 1px solid var(--line);
+    font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); font-size: 11px;
+  }
+  .stat-pill.warn { background: #fff8eb; border-color: #fcd9a4; color: #78350f; }
+  .stat-pill.bad { background: #fef2f2; border-color: #fda4a4; color: var(--bad); }
+  .stat-pill.ok { background: var(--ok-soft); border-color: #bfdcc6; color: var(--ok); }
+
+  /* Quick-jump nav (patterns) ------------------------------------ */
+  .patterns-mini {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    padding: 10px 14px; margin-bottom: 14px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  }
+  .patterns-mini .lbl {
+    font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+    margin-right: 4px;
+  }
+  .pattern-btn {
+    padding: 5px 10px; font-size: 11px; font-weight: 600;
+    background: #fff; color: var(--text); border: 1px solid var(--line);
+    border-radius: 5px; cursor: pointer; font-family: inherit;
+  }
+  .pattern-btn:hover { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+  .pattern-btn.disabled { opacity: 0.45; cursor: not-allowed; }
+  .scope-hint { font-size: 10.5px; color: var(--muted-2); margin-left: auto; font-style: italic; }
+
+  /* Section chrome ------------------------------------------------ */
+  .section {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 10px; overflow: hidden; margin-bottom: 14px;
+  }
+  .section-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 14px; font-size: 13px; font-weight: 700;
+    background: #fafafa; border-bottom: 1px solid var(--line-soft);
+  }
+  .section-head .sub { font-weight: 400; color: var(--muted); font-size: 12px; }
+  .section-head .right { margin-left: auto; font-size: 11px; font-weight: 400; color: var(--muted-2); }
+
+  /* Buttons ------------------------------------------------------- */
+  .btn { padding: 6px 12px; font-size: 12px; font-weight: 600; border: 1px solid var(--line); border-radius: 5px; background: #fff; cursor: pointer; color: var(--text); font-family: inherit; }
+  .btn:hover:not(:disabled) { background: #f5f5f5; }
+  .btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .btn.primary:hover:not(:disabled) { background: #155ab8; }
+  .btn.subtle { border-color: transparent; color: var(--muted); }
+  .btn.warn { background: #fef3c7; border-color: #fde68a; color: #92400e; }
+  .btn.ghost { background: transparent; border-color: transparent; color: var(--muted); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* WMPC topic list --------------------------------------------- */
+  .topic-row {
+    display: grid; grid-template-columns: 28px 1fr 120px auto auto;
+    align-items: center; gap: 10px;
+    padding: 12px 14px; cursor: pointer; border: none; background: transparent;
+    width: 100%; text-align: left; font-family: inherit;
+    border-bottom: 1px solid var(--line-soft);
+    border-left: 3px solid transparent;
+  }
+  .topic-row:hover { background: #f7f9fc; }
+  .topic-row.open {
+    background: #eef3ff; border-left-color: var(--blue);
+    padding-left: 11px;
+    border-bottom: 1px solid #c9daff;
+  }
+  .topic-row.reviewed { border-left-color: var(--ok); background: #f8fbf8; }
+  .topic-icon { font-size: 16px; }
+  .topic-title { font-size: 14px; font-weight: 700; color: var(--text); }
+  .topic-sub { font-size: 11px; color: var(--muted-2); margin-top: 2px; }
+  .topic-score {
+    text-align: right;
+    font-size: 13px; font-weight: 700; color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .topic-score .pct { font-size: 11px; color: var(--muted); margin-left: 6px; }
+  .topic-status-chip {
+    font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 4px;
+    text-transform: uppercase; letter-spacing: 0.3px;
+  }
+  .topic-status-chip.pending { background: var(--warn-soft); color: #92400e; }
+  .topic-status-chip.done { background: var(--ok-soft); color: var(--ok); }
+  .chev { font-size: 10px; color: var(--muted-2); }
+
+  .topic-expanded {
+    padding: 14px; background: #fbfbfc; border-bottom: 1px solid var(--line-soft);
+  }
+  .topic-expanded .stage {
+    display: grid; grid-template-columns: 3fr 2fr; gap: 14px;
+  }
+
+  /* Video + clip */
+  .video-shell {
+    background: #0b1020; border-radius: 8px; overflow: hidden;
+    position: relative; aspect-ratio: 16/9; display: grid; place-items: center;
+    color: #8aa8d8;
+  }
+  .video-shell .placeholder { text-align: center; }
+  .video-shell .v-title { font-size: 14px; font-weight: 700; color: #d4e1f5; }
+  .video-shell .meta { font-size: 11px; color: #8aa8d8; margin-top: 4px; }
+  .loop-pill {
+    position: absolute; top: 10px; left: 10px;
+    padding: 3px 8px; font-size: 10px; font-weight: 700; letter-spacing: 0.3px;
+    background: rgba(26,115,232,0.9); color: #fff; border-radius: 3px; text-transform: uppercase;
+  }
+  .pass-fail-pill {
+    position: absolute; top: 10px; right: 10px;
+    padding: 3px 10px; font-size: 10px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase;
+    border-radius: 3px;
+  }
+  .pass-fail-pill.fail { background: rgba(198, 40, 40, 0.9); color: #fff; }
+  .pass-fail-pill.pass { background: rgba(30, 126, 52, 0.9); color: #fff; }
+
+  .clip-controls {
+    display: flex; align-items: center; gap: 6px; margin-top: 8px;
+    font-size: 12px; color: var(--muted); flex-wrap: wrap;
+  }
+  .chip-btn { font-size: 11px; padding: 3px 9px; background: #fff; border: 1px solid var(--line); border-radius: 20px; cursor: pointer; color: var(--muted); font-family: inherit; }
+  .chip-btn.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+  .chip-btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+  /* Instance timeline — horizontal list of all instances (pass/fail) */
+  .timeline-wrap { margin-top: 10px; }
+  .timeline-header {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 4px;
+    font-size: 11px; color: var(--muted);
+  }
+  .timeline-header .grow { flex: 1; }
+  .timeline-filters { display: inline-flex; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+  .timeline-filters button {
+    padding: 3px 10px; font-size: 10px; font-weight: 700; letter-spacing: 0.3px;
+    background: #fff; color: var(--muted); border: none; cursor: pointer; font-family: inherit;
+    border-right: 1px solid var(--line);
+  }
+  .timeline-filters button:last-child { border-right: none; }
+  .timeline-filters button.active { background: var(--blue); color: #fff; }
+
+  .timeline {
+    display: flex; gap: 4px; padding: 8px 8px; background: #fff;
+    border: 1px solid var(--line); border-radius: 6px;
+    overflow-x: auto;
+  }
+  .tline-item {
+    display: inline-flex; flex-direction: column; align-items: center; gap: 2px;
+    padding: 5px 6px; border-radius: 4px; cursor: pointer; min-width: 42px;
+    background: transparent; border: 1px solid transparent; font-family: inherit;
+  }
+  .tline-item .rally { font-size: 10px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .tline-item .icon {
+    width: 18px; height: 18px; border-radius: 50%;
+    display: grid; place-items: center; font-size: 11px; font-weight: 700; color: #fff;
+  }
+  .tline-item.pass .icon { background: var(--ok); }
+  .tline-item.fail .icon { background: var(--bad); }
+  .tline-item:hover:not(.current) { background: #f0f4ff; }
+  .tline-item.current {
+    background: var(--blue-soft); border-color: var(--blue);
+  }
+  .tline-item.current .rally { color: var(--blue); }
+  .tline-item.dim { opacity: 0.2; cursor: default; pointer-events: none; }
+
+  .instance-nav {
+    display: flex; align-items: center; gap: 6px; margin-top: 8px;
+    font-size: 11px; color: var(--muted);
+  }
+  .instance-nav .grow { flex: 1; }
+
+  /* Right column: recommendation */
+  .side-panel { display: flex; flex-direction: column; gap: 10px; }
+  .panel-card { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+  .panel-card h4 {
+    margin: 0 0 6px; font-size: 11px; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.5px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .panel-card h4 .note { font-weight: 500; color: var(--muted-2); text-transform: none; letter-spacing: 0; }
+  textarea {
+    width: 100%; box-sizing: border-box;
+    padding: 8px 10px; font-size: 12px; font-family: inherit;
+    border: 1px solid var(--line); border-radius: 5px; resize: vertical;
+  }
+
+  .tag-picker { display: flex; flex-wrap: wrap; gap: 4px; }
+  .tag-pick {
+    font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 12px;
+    background: #f2f4f7; color: var(--muted); border: 1px solid transparent; cursor: pointer;
+  }
+  .tag-pick.on { background: var(--blue); color: #fff; }
+  .tag-pick.custom { border-style: dashed; border-color: var(--line); color: var(--muted-2); }
+  .tag-hint { font-size: 10px; color: var(--muted-2); margin-top: 6px; }
+  .tag-hint a { color: var(--blue); text-decoration: none; }
+
+  .topic-actions {
+    margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line-soft);
+    display: flex; gap: 6px; align-items: center;
+  }
+  .topic-actions .left { flex: 1; font-size: 11px; color: var(--muted-2); }
+  .topic-actions .right { display: flex; gap: 6px; }
+
+  /* Review queue — slim now ------------------------------------- */
+  .queue-filter {
+    display: flex; gap: 6px; align-items: center;
+    padding: 10px 14px; background: #fafafa; border-bottom: 1px solid var(--line-soft);
+    font-size: 12px; color: var(--muted);
+  }
+  .queue-filter .grow { flex: 1; }
+
+  .queue-item { border-bottom: 1px solid var(--line-soft); }
+  .queue-item:last-child { border-bottom: none; }
+  .queue-row {
+    display: grid; grid-template-columns: 22px 16px 100px 1fr auto auto;
+    align-items: center; gap: 10px; padding: 10px 14px;
+    cursor: pointer; transition: background 0.12s; width: 100%;
+    background: transparent; border: none; font-family: inherit; text-align: left;
+    border-left: 3px solid transparent;
+  }
+  .queue-row:hover:not([disabled]) { background: #f7f9fc; }
+  .queue-row.active { background: #eef3ff; border-left-color: var(--blue); padding-left: 11px; }
+  .queue-row.reviewed { background: #f8fbf8; border-left-color: var(--ok); }
+  .queue-row[disabled] { opacity: 0.55; cursor: not-allowed; }
+  .queue-row[disabled]:hover { background: transparent; }
+
+  .status-dot {
+    width: 18px; height: 18px; border-radius: 50%;
+    border: 2px solid #ccc; box-sizing: border-box;
+    display: inline-grid; place-items: center; font-size: 11px; font-weight: 700; color: #fff;
+  }
+  .queue-row.active .status-dot { border-color: var(--blue); background: transparent; }
+  .queue-row.active .status-dot::before { content: "▶"; color: var(--blue); font-size: 9px; }
+  .queue-row.reviewed .status-dot { border: none; background: var(--ok); }
+  .queue-row.reviewed .status-dot::before { content: "✓"; }
+
+  .kind-icon { font-size: 14px; }
+  .kind-badge { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; padding: 2px 7px; border-radius: 3px; text-align: center; }
+  .kind-flag { background: #fef3c7; color: #92400e; }
+  .kind-seq { background: #ede9fe; color: #6d28d9; }
+  .kind-script { background: #dcfce7; color: #166534; }
+  .kind-beat { background: #fee2e2; color: #991b1b; }
+  .kind-loss { background: #fee2e2; color: #991b1b; }
+  .kind-promoted { background: #e0e7ff; color: #3730a3; }
+  .title { font-size: 13px; font-weight: 500; color: var(--text); }
+  .subline { font-size: 11px; color: var(--muted-2); margin-top: 2px; }
+  .tag-chips { display: inline-flex; gap: 4px; margin-left: 6px; }
+  .tag-chip {
+    font-size: 9px; font-weight: 600; padding: 2px 7px; border-radius: 10px;
+    background: #eef2f7; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px;
+  }
+  .rally-pill {
+    font-size: 11px; color: var(--muted); padding: 2px 8px; background: #f2f2f2; border-radius: 3px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .empty-queue {
+    padding: 24px 20px; text-align: center; color: var(--muted);
+    font-size: 12px; background: #fbfbfc;
+  }
+  .empty-queue b { color: var(--text); }
+
+  /* Report card --------------------------------------------------- */
+  .report-card {
+    background: #fff9e6; border: 1px solid #fde68a; border-radius: 10px;
+    padding: 16px; margin-top: 14px;
+  }
+  .report-card h2 { margin: 0 0 4px; font-size: 16px; font-weight: 800; color: #78350f; }
+  .report-card p { margin: 4px 0 10px; font-size: 12px; color: #854d0e; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- Top bar -->
+  <div class="topbar">
+    <a href="#" class="backlink">← Session</a>
+    <div style="font-weight: 700; font-size: 14px;">kr-do-pk-2026-04-19 · Game 1</div>
+    <div class="tabs">
+      <button class="tab">Game Stats</button>
+      <button class="tab">Analyze <small>tag moments</small></button>
+      <button class="tab active">Review <small>per-player FPTM</small></button>
+    </div>
+    <div class="player-picker">
+      <label style="font-size: 12px; color: var(--muted);">Player:</label>
+      <select class="select">
+        <option>Rick Jones · Team 0</option>
+        <option>Lynn Bates · Team 0</option>
+        <option>Steve Carter · Team 1</option>
+        <option>Kayo Tanaka · Team 1</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Player hero -->
+  <div class="player-hero">
+    <div class="avatar">R</div>
+    <div>
+      <div class="name">Rick Jones</div>
+      <div class="sub">Team 0 · 6 WMPC topics · 5 coach-tagged items</div>
+      <div class="stats">
+        <span class="stat-pill">🎬 Script 62%</span>
+        <span class="stat-pill ok">🛡 Coverage 88%</span>
+        <span class="stat-pill">Topics addressed <b>1 / 6</b></span>
+        <span class="stat-pill">Queue reviewed <b>2 / 5</b></span>
+      </div>
+    </div>
+    <div style="font-size: 11px; color: var(--muted-2); max-width: 220px; text-align: right;">
+      Walk the WMPC topics top→bottom. Anything alarming? <b style="color:var(--blue);">Promote</b> the specific instance
+      to the queue for deeper FPTM work.
+    </div>
+  </div>
+
+  <!-- Patterns quick nav — scoped to selected player -->
+  <div class="patterns-mini">
+    <span class="lbl">Patterns for Rick</span>
+    <button class="pattern-btn">🎯 Shot Locations</button>
+    <button class="pattern-btn">🏁 Serve → Return</button>
+    <button class="pattern-btn">↩ Return → 3rd</button>
+    <button class="pattern-btn">🎱 Dink rallies</button>
+    <button class="pattern-btn disabled" title="Coming soon">🐆 Pounce ops</button>
+    <span class="scope-hint">Filtered to Rick's shots · other players dimmed on the court</span>
+  </div>
+
+  <!-- WMPC ANALYSIS — primary section, self-contained review -->
+  <div class="section">
+    <div class="section-head">
+      📊 WMPC Analysis
+      <span class="sub">Review each topic in place · make a recommendation · promote alarming instances to the queue for deeper FPTM work.</span>
+      <span class="right">1 of 6 addressed</span>
+    </div>
+
+    <!-- TOPIC 1: Deep serve (reviewed) -->
+    <div class="topic-item">
+      <button class="topic-row reviewed">
+        <span class="topic-icon">🎬</span>
+        <span>
+          <div class="topic-title">Deep serve</div>
+          <div class="topic-sub">Script · 10 attempts · 2 misses
+            <span class="tag-chips"><span class="tag-chip">serve depth</span></span>
+          </div>
+        </span>
+        <span class="topic-score">8/10<span class="pct">80%</span></span>
+        <span class="topic-status-chip done">Recommendation saved</span>
+        <span class="chev">▾</span>
+      </button>
+    </div>
+
+    <!-- TOPIC 2: Deep return + kitchen (ACTIVE, open) -->
+    <div class="topic-item">
+      <button class="topic-row open">
+        <span class="topic-icon">🎬</span>
+        <span>
+          <div class="topic-title">Deep return + kitchen</div>
+          <div class="topic-sub">Script · 7 attempts · 5 misses
+            <span class="tag-chips"><span class="tag-chip">positioning</span><span class="tag-chip">third-shot</span></span>
+          </div>
+        </span>
+        <span class="topic-score" style="color: var(--bad);">2/7<span class="pct" style="color: var(--bad);">29%</span></span>
+        <span class="topic-status-chip pending">Needs recommendation</span>
+        <span class="chev">▴</span>
+      </button>
+
+      <div class="topic-expanded">
+        <div class="stage">
+          <!-- Video + instance timeline -->
+          <div>
+            <div class="video-shell">
+              <div class="loop-pill">▶ Looping clip</div>
+              <div class="pass-fail-pill fail">Fail · Rally 3</div>
+              <div class="placeholder">
+                <div class="v-title">Rally 3 — return + 4th shot</div>
+                <div class="meta">shots 1–5 · 0.5× speed · loops every ~4s</div>
+              </div>
+            </div>
+
+            <div class="clip-controls">
+              <span>Clip:</span>
+              <span class="chip-btn active">± 2 shots</span>
+              <span class="chip-btn">± 3 shots</span>
+              <span class="chip-btn" disabled title="Coming soon">Whole rally</span>
+              <span style="margin-left: auto;">Speed:</span>
+              <span class="chip-btn">0.25×</span>
+              <span class="chip-btn active">0.5×</span>
+              <span class="chip-btn">1×</span>
+            </div>
+
+            <div class="timeline-wrap">
+              <div class="timeline-header">
+                <b style="color:var(--text);">Instances</b>
+                <span>7 total · <span style="color:var(--bad);">5 fails</span> · <span style="color:var(--ok);">2 passes</span></span>
+                <span class="grow"></span>
+                <div class="timeline-filters" data-timeline="ret-kt">
+                  <button class="active" data-filter="all">All</button>
+                  <button data-filter="pass">Passes</button>
+                  <button data-filter="fail">Fails</button>
+                </div>
+              </div>
+
+              <div class="timeline" id="tl-ret-kt">
+                <button class="tline-item fail current" data-kind="fail">
+                  <span class="icon">✗</span><span class="rally">R3</span>
+                </button>
+                <button class="tline-item fail" data-kind="fail">
+                  <span class="icon">✗</span><span class="rally">R8</span>
+                </button>
+                <button class="tline-item fail" data-kind="fail">
+                  <span class="icon">✗</span><span class="rally">R11</span>
+                </button>
+                <button class="tline-item fail" data-kind="fail">
+                  <span class="icon">✗</span><span class="rally">R14</span>
+                </button>
+                <button class="tline-item fail" data-kind="fail">
+                  <span class="icon">✗</span><span class="rally">R19</span>
+                </button>
+                <button class="tline-item pass" data-kind="pass">
+                  <span class="icon">✓</span><span class="rally">R22</span>
+                </button>
+                <button class="tline-item pass" data-kind="pass">
+                  <span class="icon">✓</span><span class="rally">R24</span>
+                </button>
+              </div>
+
+              <div class="instance-nav">
+                <button class="btn subtle" style="font-size: 11px;">← Prev</button>
+                <button class="btn subtle" style="font-size: 11px;">Next →</button>
+                <span class="grow"></span>
+                <span>
+                  💡 <b style="color:var(--text);">Compare passes to fails</b> — what's Rick doing differently on R22 &amp; R24?
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right column: topic-level recommendation -->
+          <div class="side-panel">
+            <div class="panel-card">
+              <h4>Topic recommendation <span class="note">· applies to all 7 attempts</span></h4>
+              <textarea rows="5" placeholder="What's your coaching advice on deep return + kitchen as a whole? Focus on what the successful attempts do that the missed ones don't."></textarea>
+            </div>
+
+            <div class="panel-card">
+              <h4>Tags</h4>
+              <div class="tag-picker">
+                <span class="tag-pick on">positioning</span>
+                <span class="tag-pick on">third-shot</span>
+                <span class="tag-pick">reset</span>
+                <span class="tag-pick">dink battle</span>
+                <span class="tag-pick">transition</span>
+                <span class="tag-pick">mindset</span>
+                <span class="tag-pick">stacking</span>
+                <span class="tag-pick custom">+ custom</span>
+              </div>
+              <div class="tag-hint">Tags are global across games &amp; players. <a href="#">Manage tags</a></div>
+            </div>
+
+            <div class="panel-card" style="background: #fffaf0; border-color: #fde4a4;">
+              <h4 style="color: #92400e;">This instance · Rally 3</h4>
+              <div style="font-size: 11px; color: var(--muted); margin-bottom: 8px;">
+                Nothing is saved here unless you promote. Promotion adds this one rally to the review queue
+                for a full FPTM deep-dive with per-pillar notes, drills, and the works.
+              </div>
+              <button class="btn warn" style="width: 100%;">+ Promote Rally 3 to queue</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="topic-actions">
+          <div class="left">Recommendation saves on every advance. Dismiss means no recommendation — topic stays visible.</div>
+          <div class="right">
+            <button class="btn ghost">⊘ Dismiss topic</button>
+            <button class="btn">Save &amp; collapse</button>
+            <button class="btn primary">Save &amp; next topic →</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TOPIC 3: 3rd-shot drop -->
+    <div class="topic-item">
+      <button class="topic-row">
+        <span class="topic-icon">🎬</span>
+        <span>
+          <div class="topic-title">3rd-shot drop</div>
+          <div class="topic-sub">Script · 7 attempts · 2 misses</div>
+        </span>
+        <span class="topic-score" style="color: var(--warn);">5/7<span class="pct" style="color: var(--warn);">71%</span></span>
+        <span class="topic-status-chip pending">Needs recommendation</span>
+        <span class="chev">▾</span>
+      </button>
+    </div>
+
+    <!-- TOPIC 4: 4th out of the air -->
+    <div class="topic-item">
+      <button class="topic-row">
+        <span class="topic-icon">🎬</span>
+        <span>
+          <div class="topic-title">4th out of the air</div>
+          <div class="topic-sub">Script · 6 attempts · 3 let bounce</div>
+        </span>
+        <span class="topic-score" style="color: var(--warn);">3/6<span class="pct" style="color: var(--warn);">50%</span></span>
+        <span class="topic-status-chip pending">Needs recommendation</span>
+        <span class="chev">▾</span>
+      </button>
+    </div>
+
+    <!-- TOPIC 5: Direct defender coverage (now X/Y) -->
+    <div class="topic-item">
+      <button class="topic-row">
+        <span class="topic-icon">🛡</span>
+        <span>
+          <div class="topic-title">Direct defender coverage</div>
+          <div class="topic-sub">Beats · 26 attempts down line/body · 3 beats
+            <span class="tag-chips"><span class="tag-chip">positioning</span></span>
+          </div>
+        </span>
+        <span class="topic-score" style="color: var(--ok);">23/26<span class="pct" style="color: var(--ok);">88%</span></span>
+        <span class="topic-status-chip pending">Needs recommendation</span>
+        <span class="chev">▾</span>
+      </button>
+    </div>
+
+    <!-- TOPIC 6: Diagonal defender coverage -->
+    <div class="topic-item">
+      <button class="topic-row">
+        <span class="topic-icon">🛡</span>
+        <span>
+          <div class="topic-title">Diagonal defender coverage</div>
+          <div class="topic-sub">Beats · 16 attempts middle/body · 2 beats</div>
+        </span>
+        <span class="topic-score" style="color: var(--ok);">14/16<span class="pct" style="color: var(--ok);">88%</span></span>
+        <span class="topic-status-chip pending">Needs recommendation</span>
+        <span class="chev">▾</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- REVIEW QUEUE — only coach-tagged + promoted items -->
+  <div class="section">
+    <div class="section-head">
+      📋 Review Queue
+      <span class="sub">Coach-tagged items from Analyze, plus anything promoted from WMPC Analysis above.</span>
+      <span class="right">5 items · 2 reviewed</span>
+    </div>
+
+    <div class="queue-filter">
+      <span class="chip-btn active">All (5)</span>
+      <span class="chip-btn">🚩 Flags (3)</span>
+      <span class="chip-btn">📋 Sequences (2)</span>
+      <span class="chip-btn">💫 Promoted (0)</span>
+      <span class="grow"></span>
+      <span style="font-size: 11px;">Sort: <b>queue order</b></span>
+    </div>
+
+    <!-- REVIEWED flag -->
+    <div class="queue-item">
+      <button class="queue-row reviewed">
+        <span class="status-dot"></span>
+        <span class="kind-icon">🚩</span>
+        <span class="kind-badge kind-flag">Flag</span>
+        <span>
+          <div class="title">Rally 4 · dink at kitchen</div>
+          <div class="subline">Popup exploited
+            <span class="tag-chips"><span class="tag-chip">dink battle</span><span class="tag-chip">reset</span></span>
+          </div>
+        </span>
+        <span class="rally-pill">0:52 → 1:04</span>
+        <span style="color: var(--muted-3); font-size: 11px;">▾</span>
+      </button>
+    </div>
+
+    <!-- REVIEWED sequence -->
+    <div class="queue-item">
+      <button class="queue-row reviewed">
+        <span class="status-dot"></span>
+        <span class="kind-icon">📋</span>
+        <span class="kind-badge kind-seq">Sequence</span>
+        <span>
+          <div class="title">"kitchen trade goes long" · Rally 6</div>
+          <div class="subline">5 shots · Rick + Lynn
+            <span class="tag-chips"><span class="tag-chip">transition</span></span>
+          </div>
+        </span>
+        <span class="rally-pill">1:40 → 1:54</span>
+        <span style="color: var(--muted-3); font-size: 11px;">▾</span>
+      </button>
+    </div>
+
+    <!-- Queued items -->
+    <div class="queue-item">
+      <button class="queue-row">
+        <span class="status-dot"></span>
+        <span class="kind-icon">🚩</span>
+        <span class="kind-badge kind-flag">Flag</span>
+        <span>
+          <div class="title">Rally 7 · drive, forced error</div>
+          <div class="subline">Popup exploited</div>
+        </span>
+        <span class="rally-pill">2:14 → 2:25</span>
+        <span style="color: var(--muted-3); font-size: 11px;">▾</span>
+      </button>
+    </div>
+
+    <div class="queue-item">
+      <button class="queue-row">
+        <span class="status-dot"></span>
+        <span class="kind-icon">🚩</span>
+        <span class="kind-badge kind-flag">Flag</span>
+        <span>
+          <div class="title">Rally 20 · missed putaway</div>
+          <div class="subline">High ball at NVZ</div>
+        </span>
+        <span class="rally-pill">6:04 → 6:14</span>
+        <span style="color: var(--muted-3); font-size: 11px;">▾</span>
+      </button>
+    </div>
+
+    <div class="queue-item">
+      <button class="queue-row">
+        <span class="status-dot"></span>
+        <span class="kind-icon">📋</span>
+        <span class="kind-badge kind-seq">Sequence</span>
+        <span>
+          <div class="title">Rally 9 · long firefight</div>
+          <div class="subline">8 shots · Rick gets bodied</div>
+        </span>
+        <span class="rally-pill">2:44 → 3:01</span>
+        <span style="color: var(--muted-3); font-size: 11px;">▾</span>
+      </button>
+    </div>
+
+    <!-- If queue were empty: demonstration of empty state -->
+    <!--
+    <div class="empty-queue">
+      No coach-tagged items yet, and nothing promoted from WMPC Analysis.<br/>
+      Go to <b>Analyze</b> to tag moments, or review the topics above and promote anything alarming.
+    </div>
+    -->
+  </div>
+
+  <!-- Report card -->
+  <div class="report-card">
+    <h2>🎓 Report card · Rick Jones</h2>
+    <p>Write the overall takeaway once all WMPC topics have a recommendation and the queue is reviewed.</p>
+    <textarea rows="4" placeholder="Overall priorities, session-to-session trends, next focus..."></textarea>
+    <div style="margin-top: 10px; display: flex; justify-content: flex-end; gap: 6px;">
+      <button class="btn" disabled>Save draft</button>
+      <button class="btn primary" disabled style="opacity: 0.5; cursor: not-allowed;">Finalize</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Tag chip toggles
+  document.querySelectorAll(".tag-pick").forEach((t) => {
+    t.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!t.classList.contains("custom")) t.classList.toggle("on");
+    });
+  });
+
+  // Timeline filter (passes / fails / all)
+  document.querySelectorAll(".timeline-filters").forEach((filterGroup) => {
+    const timelineId = "tl-" + filterGroup.dataset.timeline;
+    const timeline = document.getElementById(timelineId);
+    filterGroup.querySelectorAll("button").forEach((b) => {
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        filterGroup.querySelectorAll("button").forEach((x) => x.classList.remove("active"));
+        b.classList.add("active");
+        const kind = b.dataset.filter;
+        timeline.querySelectorAll(".tline-item").forEach((it) => {
+          it.classList.toggle("dim", !(kind === "all" || it.dataset.kind === kind));
+        });
+      });
+    });
+  });
+
+  // Timeline click — make that instance current
+  document.querySelectorAll(".timeline .tline-item").forEach((it) => {
+    it.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const tl = it.parentElement;
+      tl.querySelectorAll(".tline-item").forEach((x) => x.classList.remove("current"));
+      it.classList.add("current");
+    });
+  });
+
+  // Topic row click — expand inline (one at a time for focus)
+  document.querySelectorAll(".topic-row").forEach((row) => {
+    row.addEventListener("click", () => {
+      const isOpen = row.classList.contains("open");
+      document.querySelectorAll(".topic-row.open").forEach((r) => {
+        r.classList.remove("open");
+        const exp = r.parentElement.querySelector(".topic-expanded");
+        if (exp) exp.style.display = "none";
+        const chev = r.querySelector(".chev");
+        if (chev) chev.textContent = "▾";
+      });
+      if (!isOpen) {
+        row.classList.add("open");
+        const exp = row.parentElement.querySelector(".topic-expanded");
+        if (exp) exp.style.display = "block";
+        const chev = row.querySelector(".chev");
+        if (chev) chev.textContent = "▴";
+      }
+    });
+  });
+</script>
+
+</body>
+</html>

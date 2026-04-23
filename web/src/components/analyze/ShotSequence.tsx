@@ -42,6 +42,12 @@ interface Props {
   // Flags
   flaggedShotIds: Set<string>;
   onToggleFlag: (shotId: string) => void;
+  /** shot_id → the flag's saved note (null = flag exists but no note). Only
+   *  populated for flagged shots; unflagged shots won't have a key. */
+  flagNoteByShotId?: Map<string, string | null>;
+  /** Persist a flag's note. Called when the coach hits Save in the inline
+   *  note popover next to the flag chip. */
+  onUpdateFlagNote?: (shotId: string, note: string | null) => Promise<void>;
   /** Ids of shots that belong to any saved sequence on this rally — used for
    *  highlight-only styling (not interactive here). */
   savedSequenceShotIds?: Set<string>;
@@ -81,26 +87,30 @@ export default function ShotSequence({
   players,
   currentMs,
   activeShotId,
-  isLooping,
-  playbackRate,
-  isPaused,
+  isLooping: _isLooping,
+  playbackRate: _playbackRate,
+  isPaused: _isPaused,
   onActivateShot,
   onReplayShot,
-  onToggleLoop,
-  onSetPlaybackRate,
-  onTogglePlay,
+  onToggleLoop: _onToggleLoop,
+  onSetPlaybackRate: _onSetPlaybackRate,
+  onTogglePlay: _onTogglePlay,
   buildMode,
   draftShotIds,
   onToggleBuildMode,
   onToggleDraftShot,
   flaggedShotIds,
   onToggleFlag,
+  flagNoteByShotId,
+  onUpdateFlagNote,
   savedSequenceShotIds,
   faultShotIds,
   dismissedLossKeys,
   onToggleDismissFault,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
+  /** shot_id whose flag-note popover is currently open. Only one at a time. */
+  const [noteOpenShotId, setNoteOpenShotId] = useState<string | null>(null);
   const activeShot = activeShotId ? shots.find((s) => s.id === activeShotId) : null;
   const activePlayer = activeShot
     ? players.find((p) => p.player_index === activeShot.player_index)
@@ -252,33 +262,9 @@ export default function ShotSequence({
             >
               ⟲ Replay
             </button>
-            <button
-              onClick={onTogglePlay}
-              style={ctrlBtn(false)}
-              title={isPaused ? "Play" : "Pause"}
-            >
-              {isPaused ? "▶ Play" : "⏸ Pause"}
-            </button>
-            <button
-              onClick={onToggleLoop}
-              style={ctrlBtn(isLooping)}
-              title="Loop this shot on repeat"
-            >
-              {isLooping ? "🔁 Looping" : "🔁 Loop"}
-            </button>
-
-            <span style={{ width: 1, background: "#d4dff7", alignSelf: "stretch", margin: "0 4px" }} />
-
-            <span style={{ fontSize: 11, color: "#666", marginRight: 4 }}>Speed:</span>
-            {[0.25, 0.5, 0.75, 1, 1.5, 2].map((rate) => (
-              <button
-                key={rate}
-                onClick={() => onSetPlaybackRate(rate)}
-                style={ctrlBtn(playbackRate === rate)}
-              >
-                {rate}×
-              </button>
-            ))}
+            <span style={{ fontSize: 11, color: "#666" }}>
+              Play / pause · speed · loop controls are under the video.
+            </span>
           </div>
         </div>
       )}
@@ -325,6 +311,8 @@ export default function ShotSequence({
                 style={{
                   position: "relative",
                   borderBottom: "1px solid #f0f0f0",
+                  display: "flex",
+                  alignItems: "stretch",
                 }}
               >
               <button
@@ -335,8 +323,9 @@ export default function ShotSequence({
                   display: "flex",
                   alignItems: "center",
                   gap: 10,
-                  width: "100%",
-                  padding: `8px ${isFault && !buildMode && onToggleDismissFault ? 170 : 40}px 8px 14px`,
+                  flex: 1,
+                  minWidth: 0,
+                  padding: "8px 12px 8px 14px",
                   fontSize: 13,
                   background: buildMode && draftShotIds.has(shot.id)
                     ? "#fff3cd"
@@ -479,80 +468,116 @@ export default function ShotSequence({
                 )}
 
               </button>
-              {/* Flag toggle — sibling of the shot button so it never nests inside one */}
-              {!buildMode && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleFlag(shot.id);
+              {/* Icons rail — outside the shot button's clickable area. Keeps
+                  the shot row scannable and lets the coach click flag /
+                  dismiss without accidentally selecting the shot.
+                  Fixed-width slots keep every icon vertically aligned across
+                  all rows: 28px per slot, in the same order (dismiss → pencil
+                  → flag). Slots without an applicable icon render an empty
+                  placeholder so the rail stays grid-aligned. */}
+              {!buildMode && (() => {
+                const isFlagged = flaggedShotIds.has(shot.id);
+                const note = flagNoteByShotId?.get(shot.id) ?? null;
+                const hasNote = !!note && note.trim().length > 0;
+                return (
+                  <div style={iconRailStyle(bgColor)}>
+                    {/* Slot 1: Fault-dismiss — always reserved; renders an
+                        icon button only for rally-ending fault shots that
+                        aren't flagged. A flagged fault is already "will
+                        review" (mutually exclusive with dismiss), so showing
+                        a ⊘ button there would be confusing. Coach can unflag
+                        first if they want to switch to dismissed. */}
+                    <div style={iconSlotStyle}>
+                      {isFault && !isFlagged && onToggleDismissFault && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onToggleDismissFault(shot, !faultDismissed);
+                          }}
+                          title={
+                            faultDismissed
+                              ? "Restore — count this loss in the review checklist again"
+                              : "Mark insignificant — hide this loss from the review checklist"
+                          }
+                          style={iconBtnStyle({
+                            bg: faultDismissed ? "#f4f4f5" : "#fff",
+                            border: faultDismissed ? "#d4d4d8" : "#fca5a5",
+                            color: faultDismissed ? "#71717a" : "#b91c1c",
+                          })}
+                        >
+                          {faultDismissed ? "✓" : "⊘"}
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Slot 2: Note pencil — always reserved; renders only
+                        for already-flagged shots. Yellow-filled when a note
+                        is saved, outlined otherwise. */}
+                    <div style={iconSlotStyle}>
+                      {isFlagged && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setNoteOpenShotId(
+                              noteOpenShotId === shot.id ? null : shot.id,
+                            );
+                          }}
+                          title={hasNote ? "Edit flag note" : "Add a note to this flag"}
+                          style={iconBtnStyle({
+                            bg: hasNote ? "#fef3c7" : "#fff",
+                            border: hasNote ? "#fde68a" : "#e2e2e2",
+                            color: hasNote ? "#92400e" : "#9ca3af",
+                          })}
+                        >
+                          ✎
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Slot 3: Flag toggle — always rendered. */}
+                    <div style={iconSlotStyle}>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const wasFlagged = flaggedShotIds.has(shot.id);
+                          onToggleFlag(shot.id);
+                          // Flagging freshly → auto-open the note editor so
+                          // the coach can jot what they plan to say in Review.
+                          if (!wasFlagged) setNoteOpenShotId(shot.id);
+                          else if (noteOpenShotId === shot.id) setNoteOpenShotId(null);
+                        }}
+                        title={isFlagged ? "Unflag" : "Flag for review"}
+                        style={iconBtnStyle({
+                          bg: isFlagged ? "#fff7e6" : "transparent",
+                          border: isFlagged ? "#fde68a" : "transparent",
+                          color: isFlagged ? "#d97706" : "#9ca3af",
+                          size: 14,
+                        })}
+                      >
+                        {isFlagged ? "🚩" : "⚑"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Inline flag-note popover. Positioned under the row. Coach can
+                  type a quick sentence about why they flagged this shot and
+                  save without navigating away. */}
+              {!buildMode && noteOpenShotId === shot.id && flaggedShotIds.has(shot.id) && (
+                <FlagNotePopover
+                  initialNote={flagNoteByShotId?.get(shot.id) ?? null}
+                  onClose={() => setNoteOpenShotId(null)}
+                  onSave={async (text) => {
+                    if (onUpdateFlagNote) {
+                      await onUpdateFlagNote(shot.id, text);
+                    }
+                    setNoteOpenShotId(null);
                   }}
-                  title={flaggedShotIds.has(shot.id) ? "Unflag" : "Flag for review"}
-                  style={{
-                    position: "absolute",
-                    right: 10,
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    fontSize: 16,
-                    padding: "4px 6px",
-                    borderRadius: 4,
-                    background: "transparent",
-                    borderTop: "none",
-                    borderBottom: "none",
-                    borderLeft: "none",
-                    borderRight: "none",
-                    cursor: "pointer",
-                    opacity: flaggedShotIds.has(shot.id) ? 1 : 0.35,
-                    color: flaggedShotIds.has(shot.id) ? "#d97706" : "#999",
-                    transition: "opacity 0.1s",
-                    fontFamily: "inherit",
-                    lineHeight: 1,
-                  }}
-                  onMouseOver={(e) => {
-                    if (!flaggedShotIds.has(shot.id))
-                      e.currentTarget.style.opacity = "0.85";
-                  }}
-                  onMouseOut={(e) => {
-                    if (!flaggedShotIds.has(shot.id))
-                      e.currentTarget.style.opacity = "0.35";
-                  }}
-                >
-                  {flaggedShotIds.has(shot.id) ? "🚩" : "⚑"}
-                </button>
-              )}
-              {/* Fault-dismiss toggle — only for rally-ending fault shots */}
-              {!buildMode && isFault && onToggleDismissFault && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleDismissFault(shot, !faultDismissed);
-                  }}
-                  title={
-                    faultDismissed
-                      ? "Restore — count this loss in the review checklist again"
-                      : "Mark insignificant — hide this loss from the review checklist"
-                  }
-                  style={{
-                    position: "absolute",
-                    right: 40,
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    fontSize: 10,
-                    fontWeight: 600,
-                    padding: "3px 8px",
-                    borderRadius: 4,
-                    background: faultDismissed ? "#f4f4f5" : "#fff",
-                    border: `1px solid ${faultDismissed ? "#d4d4d8" : "#fca5a5"}`,
-                    color: faultDismissed ? "#71717a" : "#b91c1c",
-                    cursor: "pointer",
-                    fontFamily: "inherit",
-                    lineHeight: 1,
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {faultDismissed ? "✓ Not significant" : "Not significant"}
-                </button>
+                />
               )}
               </div>
             );
@@ -567,6 +592,59 @@ function qualityColor(q: number): string {
   if (q >= 0.7) return "#1e7e34";
   if (q >= 0.4) return "#e8710a";
   return "#c62828";
+}
+
+// ─────────────────────── Row icon-rail styling ───────────────────────
+// See docs/DESIGN_PREFERENCES.md §"Aligned row indicators": every row
+// reserves the same set of slots in the same order so icons line up across
+// rows, even when the icon itself is conditional.
+
+const ICON_SLOT_WIDTH = 28;
+const ICON_BTN_SIZE = 22;
+
+function iconRailStyle(bg: string): React.CSSProperties {
+  return {
+    display: "flex",
+    alignItems: "center",
+    gap: 2,
+    padding: "0 6px 0 4px",
+    borderLeft: "1px solid #f0f0f0",
+    background: bg,
+    flexShrink: 0,
+  };
+}
+
+const iconSlotStyle: React.CSSProperties = {
+  width: ICON_SLOT_WIDTH,
+  height: ICON_BTN_SIZE,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
+
+function iconBtnStyle(opts: {
+  bg: string;
+  border: string;
+  color: string;
+  size?: number;
+}): React.CSSProperties {
+  return {
+    width: ICON_BTN_SIZE,
+    height: ICON_BTN_SIZE,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 0,
+    fontSize: opts.size ?? 12,
+    fontWeight: 600,
+    lineHeight: 1,
+    background: opts.bg,
+    border: `1px solid ${opts.border}`,
+    borderRadius: 4,
+    color: opts.color,
+    cursor: "pointer",
+    fontFamily: "inherit",
+  };
 }
 
 function ctrlBtn(active: boolean): React.CSSProperties {
@@ -584,3 +662,127 @@ function ctrlBtn(active: boolean): React.CSSProperties {
     cursor: "pointer",
   };
 }
+
+// ───────────────────── Inline flag-note popover ─────────────────────
+// Tiny anchored editor that appears right under a shot row when the coach
+// flags it (or taps the pencil on an already-flagged shot). The typed note
+// surfaces later in Coach Review as a "note to self" — reminder of what
+// the coach saw when they flagged the moment.
+
+function FlagNotePopover({
+  initialNote,
+  onClose,
+  onSave,
+}: {
+  initialNote: string | null;
+  onClose: () => void;
+  onSave: (note: string | null) => Promise<void>;
+}) {
+  const [text, setText] = useState(initialNote ?? "");
+  const [saving, setSaving] = useState(false);
+  return (
+    <div
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        position: "absolute",
+        right: 8,
+        top: "calc(100% - 2px)",
+        width: 280,
+        background: "#fff",
+        border: "1px solid #f0d169",
+        borderRadius: 6,
+        padding: 8,
+        boxShadow: "0 6px 16px rgba(0,0,0,0.08)",
+        zIndex: 20,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 10,
+          fontWeight: 700,
+          color: "#92400e",
+          textTransform: "uppercase",
+          letterSpacing: 0.3,
+          marginBottom: 4,
+        }}
+      >
+        🚩 Note to self
+      </div>
+      <textarea
+        autoFocus
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            void (async () => {
+              setSaving(true);
+              try {
+                await onSave(text.trim() || null);
+              } finally {
+                setSaving(false);
+              }
+            })();
+          }
+          if (e.key === "Escape") onClose();
+        }}
+        rows={3}
+        placeholder="Why did you flag this? (⌘/Ctrl+Enter to save)"
+        style={{
+          width: "100%",
+          boxSizing: "border-box",
+          padding: "6px 8px",
+          fontSize: 12,
+          fontFamily: "inherit",
+          border: "1px solid #e2e2e2",
+          borderRadius: 4,
+          resize: "vertical",
+        }}
+      />
+      <div style={{ display: "flex", gap: 4, justifyContent: "flex-end", marginTop: 6 }}>
+        <button
+          type="button"
+          onClick={onClose}
+          style={{
+            padding: "3px 8px",
+            fontSize: 11,
+            background: "#fff",
+            color: "#666",
+            border: "1px solid #e2e2e2",
+            borderRadius: 4,
+            cursor: "pointer",
+            fontFamily: "inherit",
+          }}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          disabled={saving}
+          onClick={async () => {
+            setSaving(true);
+            try {
+              await onSave(text.trim() || null);
+            } finally {
+              setSaving(false);
+            }
+          }}
+          style={{
+            padding: "3px 10px",
+            fontSize: 11,
+            fontWeight: 600,
+            background: "#1a73e8",
+            color: "#fff",
+            border: "1px solid #1a73e8",
+            borderRadius: 4,
+            cursor: "pointer",
+            fontFamily: "inherit",
+          }}
+        >
+          {saving ? "Saving…" : "Save"}
+        </button>
+      </div>
+    </div>
+  );
+}
+

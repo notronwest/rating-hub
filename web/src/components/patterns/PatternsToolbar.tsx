@@ -9,6 +9,8 @@
 
 import { useState } from "react";
 import ShotLocationsPanel from "./ShotLocationsPanel";
+import FirstFourShotsPanel from "./FirstFourShotsPanel";
+import DefensiveBeatsPanel from "./DefensiveBeatsPanel";
 import type { RallyShot } from "../../types/database";
 
 interface PlayerLite {
@@ -22,6 +24,7 @@ interface PlayerLite {
 interface RallyLite {
   id: string;
   rally_index: number;
+  start_ms: number;
   winning_team: number | null;
 }
 
@@ -29,9 +32,15 @@ interface Props {
   shots: RallyShot[];
   rallies: RallyLite[];
   players: PlayerLite[];
+  /** The coach's currently-selected player on the Review screen. Used to
+   *  pre-filter Shot Location panels so the coach doesn't have to re-click
+   *  their player every time they open a Patterns modal. */
+  selectedPlayerIdx?: number | null;
 }
 
 type PanelId =
+  | "first4"
+  | "beats"
   | "third"
   | "fourth"
   | "serve"
@@ -55,6 +64,8 @@ interface ToolbarBtn {
 }
 
 const BUTTONS: ToolbarBtn[] = [
+  { id: "first4", label: "First 4 Shots (scripted start)", icon: "🎬", section: "Patterns", implemented: true },
+  { id: "beats", label: "Defensive Beats (line vs middle)", icon: "🛡️", section: "Patterns", implemented: true },
   { id: "pounce", label: "Pounce Opportunities", icon: "🐆", section: "Patterns", implemented: false },
   { id: "third", label: "3rd Shot Locations", icon: "🪢", section: "Patterns", implemented: true },
   { id: "fourth", label: "4th Shot Locations", icon: "🪢", section: "Patterns", implemented: true },
@@ -70,7 +81,7 @@ const BUTTONS: ToolbarBtn[] = [
   { id: "full_ai", label: "Full Game AI (WIP)", icon: "🤖", section: "Other", implemented: false },
 ];
 
-export default function PatternsToolbar({ shots, rallies, players }: Props) {
+export default function PatternsToolbar({ shots, rallies, players, selectedPlayerIdx = null }: Props) {
   const [openPanel, setOpenPanel] = useState<PanelId | null>(null);
 
   const grouped = {
@@ -124,9 +135,25 @@ export default function PatternsToolbar({ shots, rallies, players }: Props) {
       </div>
 
       {/* Modals */}
+      {openPanel === "first4" && (
+        <FirstFourShotsPanel
+          shots={shots}
+          rallies={rallies}
+          players={players}
+          onClose={() => setOpenPanel(null)}
+        />
+      )}
+      {openPanel === "beats" && (
+        <DefensiveBeatsPanel
+          shots={shots}
+          rallies={rallies}
+          players={players}
+          onClose={() => setOpenPanel(null)}
+        />
+      )}
       {openPanel === "third" && (
         <ShotLocationsPanel
-          title="3rd Shot Contact Locations"
+          title="3rd Shot Landing Locations"
           shots={shots}
           rallies={rallies}
           players={players}
@@ -135,36 +162,40 @@ export default function PatternsToolbar({ shots, rallies, players }: Props) {
             { label: "Drive", match: (s) => s.shot_type === "drive" },
             { label: "Drop", match: (s) => s.shot_type === "drop" },
           ]}
+          defaultPlayerIdx={selectedPlayerIdx}
           onClose={() => setOpenPanel(null)}
         />
       )}
       {openPanel === "fourth" && (
         <ShotLocationsPanel
-          title="4th Shot Contact Locations"
+          title="4th Shot Landing Locations"
           shots={shots}
           rallies={rallies}
           players={players}
           shotFilter={(s) => s.shot_index === 3}
+          defaultPlayerIdx={selectedPlayerIdx}
           onClose={() => setOpenPanel(null)}
         />
       )}
       {openPanel === "serve" && (
         <ShotLocationsPanel
-          title="Serve Contact Locations"
+          title="Serve Landing Locations"
           shots={shots}
           rallies={rallies}
           players={players}
           shotFilter={(s) => s.shot_index === 0 || s.shot_type === "serve"}
+          defaultPlayerIdx={selectedPlayerIdx}
           onClose={() => setOpenPanel(null)}
         />
       )}
       {openPanel === "return" && (
         <ShotLocationsPanel
-          title="Return Contact Locations"
+          title="Return Landing Locations"
           shots={shots}
           rallies={rallies}
           players={players}
           shotFilter={(s) => s.shot_index === 1 || s.shot_type === "return"}
+          defaultPlayerIdx={selectedPlayerIdx}
           onClose={() => setOpenPanel(null)}
         />
       )}

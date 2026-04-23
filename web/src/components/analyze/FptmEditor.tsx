@@ -157,6 +157,10 @@ export default function FptmEditor({
             onToggleItem={(itemId) => toggleItem(pillar.id, itemId)}
             onToggleExpanded={() => toggleExpanded(pillar.id)}
             onNoteChange={(note) => patchPillar(pillar.id, { note })}
+            onProblemChange={(problem) => patchPillar(pillar.id, { problem })}
+            onResolutionChange={(resolution) =>
+              patchPillar(pillar.id, { resolution })
+            }
             onSetTone={(tone) => setTone(pillar.id, tone)}
           />
         ))}
@@ -213,6 +217,8 @@ function PillarRow({
   onToggleItem,
   onToggleExpanded,
   onNoteChange,
+  onProblemChange,
+  onResolutionChange,
   onSetTone,
 }: {
   pillar: FptmPillarDef;
@@ -222,13 +228,18 @@ function PillarRow({
   onToggleItem: (itemId: string) => void;
   onToggleExpanded: () => void;
   onNoteChange: (note: string) => void;
+  onProblemChange: (problem: string) => void;
+  onResolutionChange: (resolution: string) => void;
   onSetTone: (tone: FptmTone) => void;
 }) {
   const on = state?.on ?? false;
   const tone: FptmTone = state?.tone ?? "weakness";
   const selectedItems = state?.items ?? [];
   const note = state?.note ?? "";
-  const hasDetail = selectedItems.length > 0 || !!note;
+  const problem = state?.problem ?? "";
+  const resolution = state?.resolution ?? "";
+  const hasDetail =
+    selectedItems.length > 0 || !!note || !!problem || !!resolution;
   // Active tone colors the border / accent; pillar.color is the brand color
   const accent = on ? TONE_COLORS[tone] : pillar.color;
 
@@ -436,29 +447,99 @@ function PillarRow({
               </label>
             );
           })}
-          <textarea
-            value={note}
-            onChange={(e) => onNoteChange(e.target.value)}
-            rows={2}
-            placeholder={`Notes on ${pillar.label.toLowerCase()} (optional)…`}
-            style={{
-              width: "100%",
-              padding: "6px 8px",
-              marginTop: 4,
-              fontSize: 12,
-              borderTop: "1px solid #e0e0e0",
-              borderBottom: "1px solid #e0e0e0",
-              borderLeft: "1px solid #e0e0e0",
-              borderRight: "1px solid #e0e0e0",
-              borderRadius: 4,
-              outline: "none",
-              resize: "vertical",
-              fontFamily: "inherit",
-              boxSizing: "border-box",
-            }}
-          />
+          {tone === "weakness" ? (
+            // "Needs work" gets a problem/resolution pair so the coach
+            // captures both halves of the diagnosis in one place. The old
+            // single `note` field is intentionally not rendered in this
+            // tone, but existing payloads are migrated below if they
+            // had one pre-split.
+            <>
+              <PillarField
+                label="Here's the problem"
+                accent="#c62828"
+                value={problem || note /* fall back to legacy note */}
+                placeholder={`What ${pillar.label.toLowerCase()} issue did you see?`}
+                onChange={(v) => {
+                  onProblemChange(v);
+                  // If we're migrating a legacy note into `problem`, clear
+                  // `note` on the same patch so the fallback doesn't keep
+                  // echoing into this field.
+                  if (!problem && note) onNoteChange("");
+                }}
+              />
+              <PillarField
+                label="Here's the resolution"
+                accent="#1e7e34"
+                value={resolution}
+                placeholder="What should they practice to fix it?"
+                onChange={onResolutionChange}
+              />
+            </>
+          ) : (
+            // "Strength / Good job" keeps the single-field flow — one note
+            // is enough to call out what the player did well.
+            <PillarField
+              label="Notes"
+              accent={pillar.color}
+              value={note}
+              placeholder={`What ${pillar.label.toLowerCase()} did they do well?`}
+              onChange={onNoteChange}
+            />
+          )}
         </div>
       )}
+    </div>
+  );
+}
+
+// Labeled textarea shared by the strength/weakness branches. The colored
+// uppercase label matches the style used in Common Themes so the two
+// flows look like siblings — one is per-pillar detail, the other is
+// session-level summary, but they speak the same visual language.
+function PillarField({
+  label,
+  accent,
+  value,
+  placeholder,
+  onChange,
+}: {
+  label: string;
+  accent: string;
+  value: string;
+  placeholder: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div style={{ marginTop: 4 }}>
+      <div
+        style={{
+          fontSize: 10,
+          fontWeight: 700,
+          color: accent,
+          textTransform: "uppercase",
+          letterSpacing: 0.4,
+          marginBottom: 3,
+        }}
+      >
+        {label}
+      </div>
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        rows={2}
+        placeholder={placeholder}
+        style={{
+          width: "100%",
+          padding: "6px 8px",
+          fontSize: 12,
+          border: "1px solid #e0e0e0",
+          borderRadius: 4,
+          outline: "none",
+          resize: "vertical",
+          fontFamily: "inherit",
+          boxSizing: "border-box",
+        }}
+      />
     </div>
   );
 }

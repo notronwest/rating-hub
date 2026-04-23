@@ -9,7 +9,7 @@
  */
 
 import { useMemo, useState } from "react";
-import CourtMap, { shotToDot, type CourtDot } from "./CourtMap";
+import Court3DMap, { shotToDot3D, type CourtDot3D, type ShotArc } from "./Court3DMap";
 import type { RallyShot } from "../../types/database";
 
 interface PlayerLite {
@@ -36,6 +36,9 @@ export interface ShotLocationsPanelProps {
   shotFilter: (shot: RallyShot, rally: RallyLite) => boolean;
   /** Optional shot-type sub-filter (e.g. "Drive" / "Drop"). Rendered as chips. */
   subTypes?: Array<{ label: string; match: (shot: RallyShot) => boolean }>;
+  /** If set, the panel opens pre-filtered to this player. The coach can still
+   *  toggle back to team/all by clicking the selection. */
+  defaultPlayerIdx?: number | null;
   onClose: () => void;
 }
 
@@ -48,6 +51,7 @@ export default function ShotLocationsPanel({
   players,
   shotFilter,
   subTypes,
+  defaultPlayerIdx = null,
   onClose,
 }: ShotLocationsPanelProps) {
   const rallyById = useMemo(
@@ -61,8 +65,17 @@ export default function ShotLocationsPanel({
 
   // UI state
   const [subType, setSubType] = useState<string>("All");
-  const [selectedTeam, setSelectedTeam] = useState<0 | 1 | null>(null);
-  const [selectedPlayerIdx, setSelectedPlayerIdx] = useState<number | null>(null);
+  // Default team selection follows the default player (if provided) so the
+  // matching TeamStatCard renders in its selected/highlighted state.
+  const defaultTeam: 0 | 1 | null = useMemo(() => {
+    if (defaultPlayerIdx == null) return null;
+    const p = players.find((pp) => pp.player_index === defaultPlayerIdx);
+    return p ? (p.team as 0 | 1) : null;
+  }, [defaultPlayerIdx, players]);
+  const [selectedTeam, setSelectedTeam] = useState<0 | 1 | null>(defaultTeam);
+  const [selectedPlayerIdx, setSelectedPlayerIdx] = useState<number | null>(
+    defaultPlayerIdx,
+  );
   const [hover, setHover] = useState<CourtDot | null>(null);
 
   // 1) Apply the primary predicate (e.g. 3rd-shot-of-rally)
@@ -99,28 +112,61 @@ export default function ShotLocationsPanel({
     });
   }, [typedShots, playerByIndex, selectedTeam, selectedPlayerIdx]);
 
-  // Build dots
-  const dots: CourtDot[] = useMemo(() => {
-    const out: CourtDot[] = [];
+  // Bezier arcs — contact → peak → landing for each visible shot. The 3D
+  // court map traces the actual flight path rather than a straight line.
+  const arcs = useMemo(() => {
+    const m = new Map<string, ShotArc>();
+    for (const s of filteredShots) {
+      if (s.contact_x == null || s.contact_y == null) continue;
+      m.set(s.id, {
+        contact: {
+          x: s.contact_x,
+          y: s.contact_y,
+          z: s.contact_z ?? 0,
+        },
+        peak: s.trajectory?.peak
+          ? {
+              x: s.trajectory.peak.x,
+              y: s.trajectory.peak.y,
+              z: s.trajectory.peak.z,
+            }
+          : undefined,
+      });
+    }
+    return m;
+  }, [filteredShots]);
+
+  // Build dots — positioned at the landing point, colored by whether the
+  // shot itself was "in" (not a fault) vs a fault. Winning/losing the rally
+  // is not used for color here — coaches want placement signal, not
+  // outcome signal.
+  const dots: CourtDot3D[] = useMemo(() => {
+    const out: CourtDot3D[] = [];
     for (const s of filteredShots) {
       const player = s.player_index != null ? playerByIndex.get(s.player_index) : null;
       if (!player) continue;
-      const rally = rallyById.get(s.rally_id);
-      const wt = rally?.winning_team;
-      const won = wt == null ? null : wt === player.team;
-      const d = shotToDot({
+      const d = shotToDot3D({
         id: s.id,
+        land_x: s.land_x,
+        land_y: s.land_y,
+        land_z: s.land_z,
         contact_x: s.contact_x,
         contact_y: s.contact_y,
         team: player.team as 0 | 1,
-        won,
+        // Coach-facing coloring: a shot with PBV-detected errors (fault /
+        // out) reads as "miss" (won=false → red); otherwise "in" (won=true
+        // → green). This ignores who won the rally.
+        won:
+          s.shot_errors && Object.keys(s.shot_errors).length > 0
+            ? false
+            : true,
         is_final: s.is_final,
         shot_errors: s.shot_errors,
       });
       if (d) out.push(d);
     }
     return out;
-  }, [filteredShots, playerByIndex, rallyById]);
+  }, [filteredShots, playerByIndex]);
 
   // Per-team summary stats
   const stats = useMemo(() => {
@@ -272,11 +318,12 @@ export default function ShotLocationsPanel({
             </div>
           )}
 
-          <CourtMap
+          <Court3DMap
             dots={dots}
+            arcs={arcs}
             onDotHover={setHover}
             activeDotId={hover?.id ?? null}
-            width={460}
+            width={540}
           />
           <div style={{ fontSize: 11, color: "#888" }}>
             Showing {dots.length} of {baseShots.length} shots
@@ -290,8 +337,8 @@ export default function ShotLocationsPanel({
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div style={{ fontSize: 12 }}>
             <div style={{ fontWeight: 700, marginBottom: 6 }}>Legend</div>
-            <LegendRow color="#1a73e8" label="Win (filled)" hollow={false} />
-            <LegendRow color="#1a73e8" label="Loss (hollow)" hollow />
+            <LegendRow color="#4caf50" label="In (shot was good)" hollow={false} />
+            <LegendRow color="#ef4444" label="Out / fault" hollow={false} />
             <div
               style={{
                 display: "flex",
@@ -311,17 +358,10 @@ export default function ShotLocationsPanel({
                 gap: 6,
                 color: "#444",
                 marginTop: 4,
+                fontStyle: "italic",
               }}
             >
-              <span
-                style={{
-                  width: 10,
-                  height: 10,
-                  borderRadius: "50%",
-                  border: "2px solid #ef4444",
-                }}
-              />
-              <span>Point ended on this shot</span>
+              <span>Arcs trace contact → peak → landing</span>
             </div>
           </div>
 

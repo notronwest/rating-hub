@@ -1006,6 +1006,10 @@ interface AugmentedShot {
   shot_type?: string;
   is_passing?: boolean;
   is_volley?: boolean;
+  is_reset?: boolean;
+  is_poach?: boolean;
+  is_putaway?: boolean;
+  is_speedup?: boolean;
   player_positions?: Array<{ x?: number; y?: number }>;
   advantage_scale?: number[];
   shooter_movement_from_last_shot?: { x?: number; y?: number };
@@ -1112,7 +1116,17 @@ function buildShotPatch(shot: AugmentedShot): Record<string, unknown> | null {
   if (shot.errors && Object.keys(shot.errors).length > 0) {
     patch.shot_errors = shot.errors;
   }
-  if (shot.shot_type) patch.shot_type = shot.shot_type;
+  // Shot type — augmented's `shot_type` is the canonical stroke label (drive
+  // / drop / dink / lob / smash / volley). Specialty flags (is_reset,
+  // is_passing, etc.) override it so the stat counts stay semantically
+  // correct: a "drive with is_reset=true" is a reset, not a drive.
+  let resolvedType = shot.shot_type ?? null;
+  if (shot.is_reset) resolvedType = "reset";
+  else if (shot.is_passing) resolvedType = "passing";
+  else if (shot.is_poach) resolvedType = "poach";
+  else if (shot.is_putaway) resolvedType = "putaway";
+  else if (shot.is_speedup) resolvedType = "speedup";
+  if (resolvedType) patch.shot_type = resolvedType;
 
   return Object.keys(patch).length > 0 ? patch : null;
 }

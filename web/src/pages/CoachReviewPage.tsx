@@ -12,7 +12,7 @@
  * ReasonsForLosingRally — just the video, the sequence, and the two note fields.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { supabase } from "../supabase";
 import { useAuth } from "../auth/AuthProvider";
 import {
@@ -24,7 +24,6 @@ import {
   listFlaggedShots,
   unflagShot,
   updateFlagFptm,
-  updateFlagNote,
   updateAnalysis,
   setDismissedLossKeys,
   setGameMuxPlaybackId,
@@ -44,6 +43,8 @@ import ShotTooltip from "../components/analyze/ShotTooltip";
 import FptmEditor from "../components/analyze/FptmEditor";
 import GameHeader from "../components/GameHeader";
 import PatternsToolbar from "../components/patterns/PatternsToolbar";
+import WmpcAnalysisPanel from "../components/review/WmpcAnalysisPanel";
+import ConfirmModal from "../components/ConfirmModal";
 import { summarizeFptm, type FptmValue } from "../lib/fptm";
 
 interface GameRow {
@@ -129,16 +130,39 @@ export default function CoachReviewPage() {
     | null
   >(null);
 
+  /** Which review-kind filter is active in the queue. "all" = show everything. */
+  const [queueFilter, setQueueFilter] = useState<
+    "all" | "flag" | "sequence" | "loss"
+  >("all");
+
   const playerIdParam = searchParams.get("playerId") ?? "";
-  const [currentIdx, setCurrentIdx] = useState(0);
+  // Default -1 = nothing expanded on load. Coach explicitly picks a row.
+  const [currentIdx, setCurrentIdx] = useState(-1);
   const [fptm, setFptm] = useState<FptmValue>({});
   const [drills, setDrills] = useState<string | null>(null);
+  /** "Overall note" field shown next to FPTM on review items. Persists to
+   *  flag.note for flags and sequence.what_went_wrong for sequences/losses. */
+  const [overallNote, setOverallNote] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [currentMs, setCurrentMs] = useState(0);
   const [playbackRate, setPlaybackRate] = useState(0.5); // slow motion by default for coaching
+  // Controls the "Remove this flag?" confirmation modal. See
+  // docs/DESIGN_PREFERENCES.md §"Destructive-action confirmations" — we use
+  // an in-app modal everywhere instead of window.confirm.
+  const [unflagConfirm, setUnflagConfirm] = useState<{
+    analysisId: string;
+    shotId: string;
+  } | null>(null);
 
   const videoRef = useRef<VideoPlayerHandle>(null);
+
+  // When the coach deliberately seeks away from the active review item (e.g.
+  // via a drill-down Play on the First-4-Shots / Defensive-Beats cards), we
+  // want the sequence-loop effect to stop snapping the video back. We clear
+  // this whenever the active review item changes, so the loop behavior
+  // returns the moment the coach picks a new item.
+  const [loopSuspended, setLoopSuspended] = useState(false);
 
   // Load all page data
   useEffect(() => {
@@ -241,6 +265,16 @@ export default function CoachReviewPage() {
     [analysis],
   );
 
+  // Set of shot ids the coach has flagged for review. Flagged shots are
+  // surfaced via the Flags section of the queue, so we deliberately exclude
+  // them from the auto-computed Rally Losses section to avoid double-counting
+  // the same moment in both places (flag + dismiss are mutually exclusive
+  // with the "pending rally loss" state).
+  const flaggedShotIds = useMemo(
+    () => new Set(flags.map((f) => f.shot_id)),
+    [flags],
+  );
+
   const losses: PlayerLoss[] = useMemo(() => {
     if (!selectedPlayer) return [];
     const shotsByRally = new Map<string, RallyShot[]>();
@@ -262,6 +296,10 @@ export default function CoachReviewPage() {
       if (!res) continue;
       if (res.attributedShot.player_index !== selectedPlayer.player_index)
         continue;
+      // Mutual exclusion with Flags: if the coach flagged this shot, it's
+      // "will review" and lives in the Flags section — don't also auto-enqueue
+      // it as a pending rally loss.
+      if (flaggedShotIds.has(res.attributedShot.id)) continue;
 
       const seqIds = buildLossSequence(rs, res.attributedShot, 4);
       const seqShots = seqIds
@@ -302,7 +340,7 @@ export default function CoachReviewPage() {
       });
     }
     return out;
-  }, [selectedPlayer, rallies, shots, sequences, dismissedLossKeys]);
+  }, [selectedPlayer, rallies, shots, sequences, dismissedLossKeys, flaggedShotIds]);
 
   // Build a parallel "flag review" list for the selected player's flagged shots
   const flagReviews: PlayerLoss[] = useMemo(() => {
@@ -427,33 +465,39 @@ export default function CoachReviewPage() {
       fptm: null,
       drills: null,
     };
+    let note = "";
     if (currentLoss.kind === "flag" && currentLoss.flag) {
       source = {
         fptm: (currentLoss.flag.fptm as FptmValue | null) ?? null,
         drills: currentLoss.flag.drills ?? null,
       };
+      note = currentLoss.flag.note ?? "";
     } else if (currentLoss.kind === "sequence" && currentLoss.sequence) {
       source = {
         fptm: (currentLoss.sequence.fptm as FptmValue | null) ?? null,
         drills: currentLoss.sequence.drills ?? null,
       };
+      note = currentLoss.sequence.what_went_wrong ?? "";
     } else if (currentLoss.existingSequence) {
       source = {
         fptm: (currentLoss.existingSequence.fptm as FptmValue | null) ?? null,
         drills: currentLoss.existingSequence.drills ?? null,
       };
+      note = currentLoss.existingSequence.what_went_wrong ?? "";
     }
     setFptm(source.fptm ?? {});
     setDrills(source.drills);
+    setOverallNote(note);
     setSaveMsg(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentLoss?.itemKey]);
 
-  // Reset index when player changes, UNLESS a pendingJump is queued — in which
-  // case the pendingJump effect below will set the correct index.
+  // Reset when player changes, UNLESS a pendingJump is queued — in which case
+  // the pendingJump effect below will set the correct index. -1 means nothing
+  // is expanded — the coach explicitly picks a row.
   useEffect(() => {
     if (pendingJump) return;
-    setCurrentIdx(0);
+    setCurrentIdx(-1);
   }, [playerIdParam, pendingJump]);
 
   // Consume pendingJump once the items list settles to match the target.
@@ -475,14 +519,23 @@ export default function CoachReviewPage() {
     }
   }, [pendingJump, items]);
 
-  // Loop the current sequence
+  // Loop the current sequence. Disabled while `loopSuspended` is true — the
+  // coach has seeked elsewhere (drill-down from the stats cards, manual
+  // scrub) and we'd be fighting them otherwise.
   useEffect(() => {
+    if (loopSuspended) return;
     if (!currentLoss) return;
     const endBuffer = 400;
     if (currentMs > currentLoss.sequenceEndMs + endBuffer) {
       videoRef.current?.seek(currentLoss.sequenceStartMs);
     }
-  }, [currentMs, currentLoss]);
+  }, [currentMs, currentLoss, loopSuspended]);
+
+  // Re-engage the loop whenever the coach explicitly selects a new review
+  // item (flag / sequence / loss / wrap-up).
+  useEffect(() => {
+    setLoopSuspended(false);
+  }, [currentLoss?.itemKey, atWrapUp]);
 
   async function handlePlaybackIdSave(playbackId: string) {
     if (!game) return;
@@ -507,20 +560,24 @@ export default function CoachReviewPage() {
     try {
       // Route the save based on what kind of item this is so we update the
       // right row rather than always creating a sequence.
+      const noteTrimmed = overallNote.trim() || null;
       if (currentLoss.kind === "flag" && currentLoss.flag) {
         await updateFlagFptm(currentLoss.flag.id, {
           fptm,
           drills: drills ?? null,
+          note: noteTrimmed,
         });
       } else if (currentLoss.kind === "sequence" && currentLoss.sequence) {
         await updateSequence(currentLoss.sequence.id, {
           fptm,
           drills: drills ?? null,
+          what_went_wrong: noteTrimmed,
         });
       } else if (currentLoss.existingSequence) {
         await updateSequence(currentLoss.existingSequence.id, {
           fptm,
           drills: drills ?? null,
+          what_went_wrong: noteTrimmed,
         });
       } else {
         await createSequence({
@@ -533,6 +590,7 @@ export default function CoachReviewPage() {
           playerId: selectedPlayer.id,
           fptm: Object.keys(fptm).length > 0 ? fptm : null,
           drills: drills ?? null,
+          whatWentWrong: noteTrimmed,
         });
       }
       await reloadSequences();
@@ -616,8 +674,15 @@ export default function CoachReviewPage() {
         .filter((s): s is RallyShot => !!s)
     : [];
 
-  // An item counts as reviewed when its backing row has an FPTM diagnosis or
-  // drills recorded (regardless of which row type that is).
+  // An item counts as reviewed when its backing row has real coaching
+  // content — FPTM or drills for any kind, or a non-empty what_went_wrong
+  // on a sequence-shaped row.
+  //
+  // A flag's `note` field is NOT sufficient because the coach typically
+  // pre-populates it at flag creation time in Analyze ("note to myself")
+  // before the review step ever happens. Counting that as reviewed would
+  // light up every flag as complete the moment it's created. Flags
+  // therefore only count as reviewed once FPTM or drills is filled in.
   function isItemReviewed(it: PlayerLoss): boolean {
     const src =
       it.kind === "flag"
@@ -627,7 +692,15 @@ export default function CoachReviewPage() {
         : it.existingSequence;
     if (!src) return false;
     const hasFptm = !!src.fptm && Object.keys(src.fptm).length > 0;
-    return hasFptm || !!src.drills;
+    if (hasFptm || !!src.drills) return true;
+    // For sequence-shaped rows, what_went_wrong is a review-time field —
+    // creating a sequence from Analyze leaves it null. For flags we
+    // intentionally do NOT fall through to `note` (see comment above).
+    if (it.kind !== "flag") {
+      const www = "what_went_wrong" in src ? src.what_went_wrong : null;
+      if (www && www.trim()) return true;
+    }
+    return false;
   }
   const reviewedCount = items.filter(isItemReviewed).length;
 
@@ -712,6 +785,45 @@ export default function CoachReviewPage() {
               >
                 ✕
               </button>
+              <Link
+                to={`/org/${orgId}/games/${gameId}/report?playerId=${selectedPlayer.id}`}
+                title="View the printable coaching report for this player"
+                style={{
+                  marginLeft: 6,
+                  padding: "4px 10px",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  background: "#fff",
+                  color: "#1a73e8",
+                  border: "1px solid #1a73e8",
+                  borderRadius: 12,
+                  textDecoration: "none",
+                  fontFamily: "inherit",
+                  letterSpacing: 0.3,
+                  textTransform: "uppercase",
+                }}
+              >
+                📄 Report
+              </Link>
+              <Link
+                to={`/org/${orgId}/games/${gameId}/present?playerId=${selectedPlayer.id}`}
+                title="Open the presentation deck to walk through findings with the player"
+                style={{
+                  padding: "4px 10px",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  background: "#7c3aed",
+                  color: "#fff",
+                  border: "1px solid #7c3aed",
+                  borderRadius: 12,
+                  textDecoration: "none",
+                  fontFamily: "inherit",
+                  letterSpacing: 0.3,
+                  textTransform: "uppercase",
+                }}
+              >
+                ▶ Present
+              </Link>
             </div>
           ) : null
         }
@@ -740,78 +852,216 @@ export default function CoachReviewPage() {
         />
       ) : !selectedPlayer ? (
         <>
-          <PlayerPickerGrid players={players} onPick={handlePickPlayer} />
-          {(flags.length > 0 || sequences.length > 0) && (
-            <div style={{ marginTop: 20 }}>
-              <OverviewPanels
-                flags={flags}
-                sequences={sequences}
-                shots={shots}
-                rallies={rallies}
-                players={players}
-                onJumpToFlag={(flag) => {
-                  const shot = shots.find((s) => s.id === flag.shot_id);
-                  if (!shot) return;
-                  const p = players.find(
-                    (pp) => pp.player_index === shot.player_index,
-                  );
-                  if (!p) return;
-                  handlePickPlayer(p.id);
-                  setPendingJump({ kind: "flag", targetShotId: flag.shot_id });
-                }}
-                onJumpToSequence={(seq) => {
-                  setOpenSequenceId(seq.id);
-                  window.scrollTo({ top: 0, behavior: "smooth" });
-                }}
-              />
-            </div>
-          )}
+          <PlayerPickerGrid
+            orgId={orgId ?? ""}
+            gameId={gameId ?? ""}
+            players={players}
+            flags={flags}
+            sequences={sequences}
+            shots={shots}
+            onPick={handlePickPlayer}
+          />
         </>
       ) : (
         <>
         {/* Analytical panels — PB Vision Patterns / Moments toolbar. Opens
             full-screen modals; doesn't disturb the linear review flow below. */}
-        <PatternsToolbar shots={shots} rallies={rallies} players={players} />
+        <PatternsToolbar
+          shots={shots}
+          rallies={rallies}
+          players={players}
+          selectedPlayerIdx={selectedPlayer?.player_index ?? null}
+        />
 
-        <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", gap: 20, alignItems: "start" }}>
-          {/* Left rail: checklist of everything the coach needs to do */}
-          <ReviewChecklist
-            items={items}
+        {/* Inline scorecard for the currently-selected player — same data as
+            the "First 4 Shots" modal but scoped to one player, shown as
+            context beside the review checklist. */}
+        {selectedPlayer && (
+          <WmpcAnalysisPanel
+            analysisId={analysis?.id ?? null}
+            player={selectedPlayer}
+            shots={shots}
+            rallies={rallies}
             players={players}
-            currentIdx={currentIdx}
-            atWrapUp={atWrapUp}
-            reviewedCount={reviewedCount}
-            isItemReviewed={isItemReviewed}
-            onJump={(idx) => setCurrentIdx(idx)}
-            dismissedCount={analysis?.dismissed_loss_keys?.length ?? 0}
-            onRestoreDismissed={handleRestoreDismissedLosses}
+            playbackId={game.mux_playback_id}
+            posterUrl={posterUrl}
+            flags={flags}
           />
+        )}
 
-          {/* Right: the active task */}
-          <div>
-          {items.length === 0 ? (
-            <WrapUpPanel
-              analysisId={analysis?.id ?? null}
-              initial={analysis?.overall_notes ?? ""}
-              onSaved={(notes) =>
-                setAnalysis((a) => (a ? { ...a, overall_notes: notes } : a))
-              }
-              progress={{ reviewedCount: 0, total: 0 }}
-            />
-          ) : atWrapUp ? (
-            <WrapUpPanel
-              analysisId={analysis?.id ?? null}
-              initial={analysis?.overall_notes ?? ""}
-              onSaved={(notes) =>
-                setAnalysis((a) => (a ? { ...a, overall_notes: notes } : a))
-              }
-              onBack={() => setCurrentIdx(items.length - 1)}
-              progress={{ reviewedCount, total: items.length }}
-            />
-          ) : (
-            <>
-          {currentLoss && (
-            <div style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: 16, alignItems: "start" }}>
+        <section
+          style={{
+            background: "#fff",
+            border: "1px solid #e2e2e2",
+            borderRadius: 10,
+            overflow: "hidden",
+            marginBottom: 14,
+          }}
+        >
+          {/* Queue header */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "12px 14px",
+              fontSize: 13,
+              fontWeight: 700,
+              background: "#fafafa",
+              borderBottom: "1px solid #eee",
+            }}
+          >
+            <span>📋 Review Queue</span>
+            <span style={{ fontWeight: 400, color: "#666", fontSize: 12 }}>
+              Coach-tagged moments from Analyze · flags, sequences, rally losses.
+            </span>
+            <span style={{ flex: 1 }} />
+            <span style={{ fontSize: 11, color: "#666", fontWeight: 500 }}>
+              {items.length} items · {reviewedCount} reviewed
+              {(analysis?.dismissed_loss_keys?.length ?? 0) > 0 &&
+                ` · ${analysis?.dismissed_loss_keys?.length} dismissed`}
+            </span>
+          </div>
+
+          {/* Filter chips + restore-dismissed */}
+          {items.length > 0 && (
+            <div
+              style={{
+                display: "flex",
+                gap: 6,
+                alignItems: "center",
+                padding: "10px 14px",
+                background: "#fafafa",
+                borderBottom: "1px solid #eee",
+                fontSize: 12,
+                color: "#666",
+                flexWrap: "wrap",
+              }}
+            >
+              <QueueFilterChip active={queueFilter === "all"} onClick={() => setQueueFilter("all")}>
+                All ({items.length})
+              </QueueFilterChip>
+              <QueueFilterChip active={queueFilter === "flag"} onClick={() => setQueueFilter("flag")}>
+                🚩 Flags ({flagReviews.length})
+              </QueueFilterChip>
+              <QueueFilterChip active={queueFilter === "sequence"} onClick={() => setQueueFilter("sequence")}>
+                📋 Sequences ({sequenceItems.length})
+              </QueueFilterChip>
+              <QueueFilterChip active={queueFilter === "loss"} onClick={() => setQueueFilter("loss")}>
+                ⚠ Rally losses ({losses.length})
+              </QueueFilterChip>
+              <span style={{ flex: 1 }} />
+              {(analysis?.dismissed_loss_keys?.length ?? 0) > 0 && (
+                <button
+                  onClick={handleRestoreDismissedLosses}
+                  style={{
+                    padding: "3px 10px",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    background: "#fff",
+                    color: "#1a73e8",
+                    border: "1px solid #c6dafc",
+                    borderRadius: 4,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Restore {analysis?.dismissed_loss_keys?.length} dismissed
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Empty state */}
+          {items.length === 0 && (
+            <div style={{ padding: "28px 20px", textAlign: "center", color: "#8a8a8a", fontSize: 13 }}>
+              No flags, sequences, or attributed rally losses for{" "}
+              <b style={{ color: "#333" }}>{selectedPlayer.display_name}</b> yet.<br />
+              Tag moments on the <b>Analyze</b> tab, then come back.
+            </div>
+          )}
+
+          {/* Rows */}
+          {(() => {
+            // Frontier-based progression: the first un-reviewed row is always
+            // clickable; anything past it is locked until that one's handled.
+            // Reviewed items stay clickable so the coach can revisit.
+            const frontierIdx = items.findIndex((it) => !isItemReviewed(it));
+            return items
+              .filter((it) => queueFilter === "all" || it.kind === queueFilter)
+              .map((it) => {
+                const idx = items.indexOf(it);
+                const isActive = idx === currentIdx && !atWrapUp;
+                const reviewed = isItemReviewed(it);
+                const locked =
+                  !reviewed && frontierIdx !== -1 && idx > frontierIdx;
+              const rowProps = describeQueueItem(it);
+              return (
+                <div key={it.itemKey} style={{ borderBottom: "1px solid #eee" }}>
+                  <button
+                    onClick={() => { if (!locked) setCurrentIdx(idx); }}
+                    disabled={locked}
+                    title={locked ? "Finish the current item to continue" : undefined}
+                    style={queueRowStyle(isActive, reviewed, locked)}
+                  >
+                    <span style={statusDotStyle(isActive, reviewed)}>
+                      {reviewed ? "✓" : isActive ? "▶" : ""}
+                    </span>
+                    <span style={{ fontSize: 14 }}>{rowProps.icon}</span>
+                    <span style={{ ...kindBadgeBase, ...rowProps.badgeStyle }}>
+                      {rowProps.kindLabel}
+                    </span>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500, color: "#222" }}>
+                        {rowProps.title}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: "#8a8a8a",
+                          marginTop: 2,
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}
+                      >
+                        {rowProps.subline}
+                      </div>
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        color: "#666",
+                        padding: "2px 8px",
+                        background: "#f2f2f2",
+                        borderRadius: 3,
+                        fontVariantNumeric: "tabular-nums",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {formatMs(it.sequenceStartMs)} → {formatMs(it.sequenceEndMs)}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        color: isActive ? "#1a73e8" : "#bbb",
+                        fontWeight: 700,
+                      }}
+                    >
+                      {isActive ? "▴" : "▾"}
+                    </span>
+                  </button>
+
+                  {/* EDITOR — only rendered for the active item */}
+                  {isActive && currentLoss && (
+                    <div
+                      style={{
+                        padding: 14,
+                        background: "#fbfbfc",
+                        borderTop: "1px solid #eee",
+                      }}
+                    >
+                      <div style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: 16, alignItems: "start" }}>
               {/* Left: video */}
               <div>
                 {game.mux_playback_id ? (
@@ -911,7 +1161,7 @@ export default function CoachReviewPage() {
                         → {currentLoss.scoreAfter}
                       </span>
                     )}
-                    {currentLoss.existingSequence && (
+                    {isItemReviewed(currentLoss) && (
                       <span
                         style={{
                           marginLeft: "auto",
@@ -958,51 +1208,35 @@ export default function CoachReviewPage() {
                     {formatMs(currentLoss.sequenceEndMs)}
                   </div>
 
-                  {/* Flag-specific: show the flag's own note + unflag button */}
+                  {/* Flag-specific: Unflag button only (the note is now part
+                      of the unified "Overall note" field below the FPTM). */}
                   {currentLoss.kind === "flag" && currentFlag && (
                     <div
                       style={{
                         marginTop: 10,
-                        padding: "8px 10px",
-                        background: "#fff8e1",
-                        border: "1px solid #f0d169",
-                        borderRadius: 6,
                         display: "flex",
-                        alignItems: "flex-start",
-                        gap: 10,
+                        justifyContent: "flex-end",
                       }}
                     >
-                      <span style={{ fontSize: 14 }}>🚩</span>
-                      <div style={{ flex: 1, fontSize: 12 }}>
-                        <div style={{ color: "#7a5d00", fontWeight: 600, marginBottom: 2 }}>
-                          Flag note
-                        </div>
-                        <FlagNoteInput
-                          flag={currentFlag}
-                          onSaved={reloadSequences}
-                        />
-                      </div>
                       <button
-                        onClick={async () => {
-                          if (!confirm("Remove this flag?")) return;
-                          await unflagShot(currentFlag.analysis_id, currentFlag.shot_id);
-                          await reloadSequences();
-                        }}
+                        onClick={() =>
+                          setUnflagConfirm({
+                            analysisId: currentFlag.analysis_id,
+                            shotId: currentFlag.shot_id,
+                          })
+                        }
                         style={{
                           padding: "4px 10px",
                           fontSize: 11,
                           background: "#fff",
                           color: "#7a5d00",
-                          borderTop: "1px solid #f0d169",
-                          borderBottom: "1px solid #f0d169",
-                          borderLeft: "1px solid #f0d169",
-                          borderRight: "1px solid #f0d169",
+                          border: "1px solid #f0d169",
                           borderRadius: 4,
                           cursor: "pointer",
                           fontFamily: "inherit",
                         }}
                       >
-                        Unflag
+                        🚩 Unflag
                       </button>
                     </div>
                   )}
@@ -1025,6 +1259,136 @@ export default function CoachReviewPage() {
                       setDrills(d);
                     }}
                   />
+
+                  {/* Overall note — the primary free-form takeaway for this
+                      item. Applies uniformly to flags, sequences, and rally
+                      losses. For flag items we label it "Note to self" and
+                      tint it amber since it's typically pre-populated with
+                      the quick note the coach jotted while flagging. */}
+                  {(() => {
+                    const isFlag = currentLoss.kind === "flag";
+                    const label = isFlag ? "🚩 Note to self" : "Overall note";
+                    const sub = isFlag
+                      ? "· from when you flagged it in Analyze"
+                      : null;
+                    const placeholder = isFlag
+                      ? "What struck you about this shot? You can expand on whatever you jotted in Analyze."
+                      : "Overall takeaway on this moment — big-picture coaching thought.";
+                    return (
+                      <div style={{ marginTop: 14 }}>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 700,
+                            color: isFlag ? "#92400e" : "#666",
+                            textTransform: "uppercase",
+                            letterSpacing: 0.5,
+                            marginBottom: 6,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <span>{label}</span>
+                          {sub && (
+                            <span
+                              style={{
+                                fontSize: 10,
+                                fontWeight: 500,
+                                color: "#a0732a",
+                                textTransform: "none",
+                                letterSpacing: 0,
+                              }}
+                            >
+                              {sub}
+                            </span>
+                          )}
+                          <span style={{ flex: 1 }} />
+                          {/* Per-item framing — stored in the item's fptm
+                              JSONB under the reserved `_overallTone` key so
+                              the existing save path picks it up for free. */}
+                          {(() => {
+                            const currentTone = fptm._overallTone ?? null;
+                            function setTone(
+                              next: "strength" | "weakness",
+                            ) {
+                              const applied =
+                                currentTone === next ? null : next;
+                              if (applied == null) {
+                                const {
+                                  _overallTone: _dropped,
+                                  ...rest
+                                } = fptm;
+                                setFptm(rest);
+                              } else {
+                                setFptm({ ...fptm, _overallTone: applied });
+                              }
+                            }
+                            return (
+                              <div
+                                role="group"
+                                aria-label="Overall tone"
+                                style={{
+                                  display: "inline-flex",
+                                  border: "1px solid #ddd",
+                                  borderRadius: 4,
+                                  overflow: "hidden",
+                                }}
+                              >
+                                {(
+                                  [
+                                    { k: "weakness", label: "Needs work", color: "#c62828" },
+                                    { k: "strength", label: "Good job", color: "#1e7e34" },
+                                  ] as const
+                                ).map((t) => {
+                                  const active = currentTone === t.k;
+                                  return (
+                                    <button
+                                      key={t.k}
+                                      type="button"
+                                      onClick={() => setTone(t.k)}
+                                      style={{
+                                        padding: "3px 10px",
+                                        fontSize: 10,
+                                        fontWeight: 700,
+                                        letterSpacing: 0.3,
+                                        textTransform: "none",
+                                        color: active ? "#fff" : t.color,
+                                        background: active ? t.color : "#fff",
+                                        border: "none",
+                                        cursor: "pointer",
+                                        fontFamily: "inherit",
+                                      }}
+                                    >
+                                      {t.label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                        <textarea
+                          value={overallNote}
+                          onChange={(e) => setOverallNote(e.target.value)}
+                          rows={3}
+                          placeholder={placeholder}
+                          style={{
+                            width: "100%",
+                            boxSizing: "border-box",
+                            padding: "8px 10px",
+                            fontSize: 13,
+                            fontFamily: "inherit",
+                            border: `1px solid ${isFlag ? "#fde68a" : "#e2e2e2"}`,
+                            borderRadius: 6,
+                            resize: "vertical",
+                            background: isFlag ? "#fffbeb" : "#fff",
+                          }}
+                        />
+                      </div>
+                    );
+                  })()}
 
                   <div
                     style={{
@@ -1079,12 +1443,40 @@ export default function CoachReviewPage() {
                 </div>
               </div>
             </div>
-          )}
-            </>
-          )}
-          </div>
-        </div>
+                    </div>
+                  )}
+                </div>
+              );
+            });
+          })()}
+        </section>
+
+        {/* Report card — always at bottom; active when atWrapUp or queue empty. */}
+        <WrapUpPanel
+          analysisId={analysis?.id ?? null}
+          initial={analysis?.overall_notes ?? ""}
+          onSaved={(notes) =>
+            setAnalysis((a) => (a ? { ...a, overall_notes: notes } : a))
+          }
+          {...(atWrapUp ? { onBack: () => setCurrentIdx(items.length - 1) } : {})}
+          progress={{ reviewedCount, total: items.length }}
+        />
         </>
+      )}
+
+      {unflagConfirm && (
+        <ConfirmModal
+          title="Remove this flag?"
+          body="The shot will stop showing up in the Review Queue. Anything you wrote in the note-to-self will be lost."
+          confirmLabel="Remove flag"
+          onCancel={() => setUnflagConfirm(null)}
+          onConfirm={async () => {
+            const { analysisId, shotId } = unflagConfirm;
+            setUnflagConfirm(null);
+            await unflagShot(analysisId, shotId);
+            await reloadSequences();
+          }}
+        />
       )}
     </div>
   );
@@ -1403,6 +1795,148 @@ function SequencePlayback({
 
 // ───────────────────────── Overview panels ─────────────────────────
 
+// ─────────────────────── Queue row styling ───────────────────────
+// Shared helpers for the unified queue (flags, sequences, losses) on the
+// Coach Review page. Kept inline rather than in a separate file because
+// the queue's data model lives here.
+
+function queueRowStyle(
+  isActive: boolean,
+  reviewed: boolean,
+  locked = false,
+): React.CSSProperties {
+  const base: React.CSSProperties = {
+    display: "grid",
+    gridTemplateColumns: "22px 16px 110px 1fr auto auto",
+    alignItems: "center",
+    gap: 10,
+    padding: "10px 14px",
+    width: "100%",
+    background: "transparent",
+    border: "none",
+    borderLeft: "3px solid transparent",
+    fontFamily: "inherit",
+    textAlign: "left",
+    cursor: locked ? "not-allowed" : "pointer",
+    transition: "background 0.12s",
+    opacity: locked ? 0.5 : 1,
+  };
+  if (isActive) {
+    return {
+      ...base,
+      background: "#eef3ff",
+      borderLeftColor: "#1a73e8",
+      paddingLeft: 11,
+    };
+  }
+  if (reviewed) {
+    return { ...base, background: "#f8fbf8", borderLeftColor: "#1e7e34" };
+  }
+  return base;
+}
+
+function statusDotStyle(isActive: boolean, reviewed: boolean): React.CSSProperties {
+  if (reviewed) {
+    return {
+      width: 18, height: 18, borderRadius: "50%",
+      background: "#1e7e34", color: "#fff",
+      display: "inline-grid", placeItems: "center",
+      fontSize: 11, fontWeight: 700,
+    };
+  }
+  if (isActive) {
+    return {
+      width: 18, height: 18, borderRadius: "50%",
+      border: "2px solid #1a73e8", boxSizing: "border-box",
+      color: "#1a73e8",
+      display: "inline-grid", placeItems: "center",
+      fontSize: 9, fontWeight: 700,
+    };
+  }
+  return {
+    width: 18, height: 18, borderRadius: "50%",
+    border: "2px solid #ccc", boxSizing: "border-box",
+  };
+}
+
+const kindBadgeBase: React.CSSProperties = {
+  fontSize: 9,
+  fontWeight: 700,
+  textTransform: "uppercase",
+  letterSpacing: 0.3,
+  padding: "2px 7px",
+  borderRadius: 3,
+  textAlign: "center",
+};
+
+interface QueueItemDescriptor {
+  icon: string;
+  kindLabel: string;
+  badgeStyle: React.CSSProperties;
+  title: string;
+  subline: string;
+}
+
+function describeQueueItem(it: PlayerLoss): QueueItemDescriptor {
+  if (it.kind === "flag") {
+    const flag = it.flag;
+    return {
+      icon: "🚩",
+      kindLabel: "Flag",
+      badgeStyle: { background: "#fef3c7", color: "#92400e" },
+      title: `Rally ${it.rallyIndex + 1} · flagged shot`,
+      subline: flag?.note ?? "No note",
+    };
+  }
+  if (it.kind === "sequence") {
+    const seq = it.sequence;
+    return {
+      icon: "📋",
+      kindLabel: "Sequence",
+      badgeStyle: { background: "#ede9fe", color: "#6d28d9" },
+      title: seq?.label || `${it.sequenceShotIds.length} shots · Rally ${it.rallyIndex + 1}`,
+      subline: `${it.sequenceShotIds.length} shots${seq?.what_went_wrong ? " · " + seq.what_went_wrong : ""}`,
+    };
+  }
+  // loss
+  return {
+    icon: "⚠",
+    kindLabel: "Rally loss",
+    badgeStyle: { background: "#fee2e2", color: "#991b1b" },
+    title: it.reason ? REASON_LABELS[it.reason] : `Rally ${it.rallyIndex + 1} loss`,
+    subline: `Rally ${it.rallyIndex + 1}${it.scoreAfter ? " → " + it.scoreAfter : ""}`,
+  };
+}
+
+function QueueFilterChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        fontSize: 11,
+        padding: "3px 10px",
+        fontWeight: 600,
+        background: active ? "#1a73e8" : "#fff",
+        color: active ? "#fff" : "#666",
+        border: `1px solid ${active ? "#1a73e8" : "#e2e2e2"}`,
+        borderRadius: 16,
+        cursor: "pointer",
+        fontFamily: "inherit",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
 function OverviewPanels({
   flags,
   sequences,
@@ -1647,436 +2181,6 @@ const listItemBtn: React.CSSProperties = {
   width: "100%",
 };
 
-function FlagNoteInput({
-  flag,
-  onSaved,
-}: {
-  flag: FlaggedShot;
-  onSaved: () => void;
-}) {
-  const [value, setValue] = useState(flag.note ?? "");
-  const [saving, setSaving] = useState(false);
-  useEffect(() => {
-    setValue(flag.note ?? "");
-  }, [flag.id, flag.note]);
-
-  async function save() {
-    setSaving(true);
-    try {
-      await updateFlagNote(flag.id, value.trim() || null);
-      onSaved();
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div style={{ display: "flex", gap: 6 }}>
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onBlur={save}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-        }}
-        placeholder="Quick note on this flag (optional)…"
-        style={{
-          flex: 1,
-          padding: "4px 8px",
-          fontSize: 12,
-          borderTop: "1px solid #ddd",
-          borderBottom: "1px solid #ddd",
-          borderLeft: "1px solid #ddd",
-          borderRight: "1px solid #ddd",
-          borderRadius: 4,
-          outline: "none",
-          fontFamily: "inherit",
-        }}
-      />
-      {saving && <span style={{ fontSize: 11, color: "#888" }}>saving…</span>}
-    </div>
-  );
-}
-
-// ─────────────────────── Review checklist (left rail) ───────────────────────
-//
-// Streamlined todo-style list so the coach has a single clear path: walk
-// down the list, check each item off, finish with the report card.
-
-function ReviewChecklist({
-  items,
-  players,
-  currentIdx,
-  atWrapUp,
-  reviewedCount,
-  isItemReviewed,
-  onJump,
-  dismissedCount,
-  onRestoreDismissed,
-}: {
-  items: PlayerLoss[];
-  players: PlayerRow[];
-  currentIdx: number;
-  atWrapUp: boolean;
-  reviewedCount: number;
-  isItemReviewed: (it: PlayerLoss) => boolean;
-  onJump: (idx: number) => void;
-  dismissedCount: number;
-  onRestoreDismissed: () => void;
-}) {
-  const total = items.length;
-  const progressPct = total === 0 ? (atWrapUp ? 100 : 0) : (reviewedCount / total) * 100;
-
-  // Build section groups (keeping queue order)
-  const flagItems = items.map((it, idx) => ({ it, idx })).filter((x) => x.it.kind === "flag");
-  const sequenceItems = items.map((it, idx) => ({ it, idx })).filter((x) => x.it.kind === "sequence");
-  const lossItems = items.map((it, idx) => ({ it, idx })).filter((x) => x.it.kind === "loss");
-
-  return (
-    <div
-      style={{
-        background: "#fff",
-        border: "1px solid #e2e2e2",
-        borderRadius: 10,
-        overflow: "hidden",
-        position: "sticky",
-        top: 16,
-      }}
-    >
-      {/* Header: progress summary */}
-      <div style={{ padding: "12px 14px", borderBottom: "1px solid #eee" }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: "#666", textTransform: "uppercase", letterSpacing: 0.5 }}>
-          Review checklist
-        </div>
-        <div style={{ fontSize: 20, fontWeight: 700, color: "#333", marginTop: 2 }}>
-          {reviewedCount} of {total}
-        </div>
-        <div
-          style={{
-            height: 5,
-            background: "#f0f0f0",
-            borderRadius: 3,
-            overflow: "hidden",
-            marginTop: 6,
-          }}
-        >
-          <div
-            style={{
-              height: "100%",
-              background: progressPct === 100 ? "#1e7e34" : "#1a73e8",
-              width: `${progressPct}%`,
-              transition: "width 0.2s",
-            }}
-          />
-        </div>
-      </div>
-
-      {/* Sections — always rendered so the coach sees the three categories
-          of work whether or not there's anything in them today. */}
-      <ChecklistSection
-        icon="🚩"
-        title="Flags"
-        color="#d97706"
-        entries={flagItems}
-        players={players}
-        currentIdx={currentIdx}
-        atWrapUp={atWrapUp}
-        isItemReviewed={isItemReviewed}
-        onJump={onJump}
-        emptyMessage="No flagged shots yet. Flag shots from the Analyze page."
-      />
-      <ChecklistSection
-        icon="📋"
-        title="Sequences"
-        color="#1a73e8"
-        entries={sequenceItems}
-        players={players}
-        currentIdx={currentIdx}
-        atWrapUp={atWrapUp}
-        isItemReviewed={isItemReviewed}
-        onJump={onJump}
-        emptyMessage="No saved sequences for this player yet."
-      />
-      <ChecklistSection
-        icon="⚠"
-        title="Rally losses"
-        color="#c62828"
-        entries={lossItems}
-        players={players}
-        currentIdx={currentIdx}
-        atWrapUp={atWrapUp}
-        isItemReviewed={isItemReviewed}
-        onJump={onJump}
-        emptyMessage="No attributed rally losses."
-        trailing={
-          dismissedCount > 0 ? (
-            <div
-              style={{
-                padding: "6px 14px",
-                fontSize: 11,
-                color: "#999",
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                background: "#fafafa",
-              }}
-            >
-              <span>
-                {dismissedCount} dismissed loss
-                {dismissedCount !== 1 ? "es" : ""}
-              </span>
-              <button
-                onClick={onRestoreDismissed}
-                style={{
-                  padding: "1px 6px",
-                  fontSize: 10,
-                  fontWeight: 600,
-                  background: "#fff",
-                  color: "#1a73e8",
-                  border: "1px solid #c6dafc",
-                  borderRadius: 3,
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                }}
-              >
-                Restore all
-              </button>
-            </div>
-          ) : null
-        }
-      />
-
-      {/* Wrap-up row — always present */}
-      <div
-        style={{
-          borderTop: "1px solid #eee",
-          background: atWrapUp ? "#e6f4ea" : "#fff",
-        }}
-      >
-        <button
-          onClick={() => onJump(total)}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            width: "100%",
-            padding: "12px 14px",
-            background: "transparent",
-            border: "none",
-            borderLeft: atWrapUp ? "3px solid #1e7e34" : "3px solid transparent",
-            cursor: "pointer",
-            textAlign: "left",
-            fontFamily: "inherit",
-          }}
-        >
-          <span style={{ fontSize: 16 }}>🎓</span>
-          <span
-            style={{
-              flex: 1,
-              fontSize: 13,
-              fontWeight: atWrapUp ? 700 : 600,
-              color: atWrapUp ? "#1e7e34" : "#333",
-            }}
-          >
-            Report card
-          </span>
-          {atWrapUp && <span style={{ fontSize: 10, color: "#1e7e34", fontWeight: 700 }}>NOW</span>}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function ChecklistSection({
-  icon,
-  title,
-  color,
-  entries,
-  players,
-  currentIdx,
-  atWrapUp,
-  isItemReviewed,
-  onJump,
-  emptyMessage,
-  trailing,
-}: {
-  icon: string;
-  title: string;
-  color: string;
-  entries: Array<{ it: PlayerLoss; idx: number }>;
-  players: PlayerRow[];
-  currentIdx: number;
-  atWrapUp: boolean;
-  isItemReviewed: (it: PlayerLoss) => boolean;
-  onJump: (idx: number) => void;
-  emptyMessage?: string;
-  trailing?: React.ReactNode;
-}) {
-  return (
-    <div style={{ borderTop: "1px solid #eee" }}>
-      <div
-        style={{
-          padding: "8px 14px",
-          background: "#fafafa",
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          fontSize: 10,
-          fontWeight: 700,
-          color,
-          textTransform: "uppercase",
-          letterSpacing: 0.5,
-        }}
-      >
-        <span style={{ fontSize: 12 }}>{icon}</span>
-        <span>{title}</span>
-        <span style={{ color: "#999", fontWeight: 500 }}>· {entries.length}</span>
-      </div>
-      {entries.length === 0 && emptyMessage && (
-        <div
-          style={{
-            padding: "8px 14px 10px",
-            fontSize: 11,
-            color: "#999",
-            fontStyle: "italic",
-          }}
-        >
-          {emptyMessage}
-        </div>
-      )}
-      {entries.map(({ it, idx }) => {
-        const active = !atWrapUp && idx === currentIdx;
-        const reviewed = isItemReviewed(it);
-        const label = checklistLabel(it, players);
-        return (
-          <button
-            key={it.itemKey}
-            onClick={() => onJump(idx)}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              width: "100%",
-              padding: "7px 14px 7px 10px",
-              background: active ? `${color}14` : reviewed ? "#fafcff" : "#fff",
-              border: "none",
-              borderLeft: active
-                ? `3px solid ${color}`
-                : "3px solid transparent",
-              cursor: "pointer",
-              textAlign: "left",
-              fontFamily: "inherit",
-              lineHeight: 1.3,
-            }}
-          >
-            <StatusDot reviewed={reviewed} active={active} color={color} />
-            <span
-              style={{
-                flex: 1,
-                fontSize: 12,
-                fontWeight: active ? 600 : 500,
-                color: reviewed ? "#666" : "#333",
-                textDecoration: reviewed && !active ? "line-through" : "none",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}
-              title={label.full}
-            >
-              {label.primary}
-              <span style={{ color: "#999", fontWeight: 400, marginLeft: 4 }}>
-                {label.secondary}
-              </span>
-            </span>
-          </button>
-        );
-      })}
-      {trailing}
-    </div>
-  );
-}
-
-function StatusDot({
-  reviewed,
-  active,
-  color,
-}: {
-  reviewed: boolean;
-  active: boolean;
-  color: string;
-}) {
-  if (reviewed) {
-    return (
-      <span
-        style={{
-          width: 16,
-          height: 16,
-          borderRadius: "50%",
-          background: "#1e7e34",
-          color: "#fff",
-          fontSize: 10,
-          fontWeight: 700,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          flexShrink: 0,
-        }}
-      >
-        ✓
-      </span>
-    );
-  }
-  return (
-    <span
-      style={{
-        width: 16,
-        height: 16,
-        borderRadius: "50%",
-        border: `2px solid ${active ? color : "#ccc"}`,
-        flexShrink: 0,
-        boxSizing: "border-box",
-      }}
-    />
-  );
-}
-
-function checklistLabel(
-  it: PlayerLoss,
-  players: PlayerRow[],
-): { primary: string; secondary: string; full: string } {
-  const rallyLabel = `Rally ${it.rallyIndex + 1}`;
-  if (it.kind === "flag") {
-    const shotId = it.attributedShotId;
-    // We don't have full shot details here; use rally + player as hint
-    const shotPlayer = it.flag
-      ? players.find((p) => {
-          // best effort — flag has shot_id; we use rally + attributedShotId
-          return p.id === shotId;
-        })
-      : null;
-    return {
-      primary: rallyLabel,
-      secondary: shotPlayer ? `· ${shotPlayer.display_name.split(" ")[0]}` : "",
-      full: `Flag · ${rallyLabel}`,
-    };
-  }
-  if (it.kind === "sequence") {
-    const lbl = it.sequence?.label?.trim();
-    return {
-      primary: lbl || `${it.sequenceShotIds.length} shots`,
-      secondary: `· ${rallyLabel}`,
-      full: `Sequence · ${rallyLabel}${lbl ? ` · ${lbl}` : ""}`,
-    };
-  }
-  // Loss
-  const reason = it.reason ? REASON_LABELS[it.reason] : "Rally loss";
-  return {
-    primary: reason,
-    secondary: `· ${rallyLabel}`,
-    full: `${reason} · ${rallyLabel}`,
-  };
-}
 
 
 /**
@@ -2376,98 +2480,317 @@ function WrapUpPanel({
 // ───────────────────────────────── helpers ─────────────────────────────────
 
 function PlayerPickerGrid({
+  orgId,
+  gameId,
   players,
+  flags,
+  sequences,
+  shots,
   onPick,
 }: {
+  orgId: string;
+  gameId: string;
   players: PlayerRow[];
+  flags: FlaggedShot[];
+  sequences: AnalysisSequence[];
+  shots: RallyShot[];
   onPick: (id: string) => void;
 }) {
   if (players.length === 0) {
     return <p style={{ color: "#999" }}>No players in this game.</p>;
   }
+
+  // Shot → player_index lookup, used below to assign flags to players.
+  const shotOwner = new Map(shots.map((s) => [s.id, s.player_index]));
+
   return (
     <div
       style={{
-        padding: 40,
+        padding: 28,
         background: "#fff",
         border: "1px solid #e2e2e2",
         borderRadius: 12,
-        textAlign: "center",
       }}
     >
-      <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>
+      <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4, textAlign: "center" }}>
         Pick a player to review
       </div>
-      <div style={{ fontSize: 13, color: "#666", marginBottom: 28 }}>
-        The workflow will step through each rally they lost, showing the last 5
-        shots leading to the error. You leave notes, save, and move on.
+      <div style={{ fontSize: 13, color: "#666", marginBottom: 22, textAlign: "center" }}>
+        Each card shows that player's flags and sequences plus how much of them
+        you've already coached. Open their queue, or jump straight to their
+        report / presentation deck.
       </div>
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
           gap: 14,
-          maxWidth: 800,
+          maxWidth: 1100,
           margin: "0 auto",
         }}
       >
         {[...players]
           .sort((a, b) => a.player_index - b.player_index)
-          .map((p) => (
-            <button
-              key={p.id}
-              onClick={() => onPick(p.id)}
-              style={{
-                padding: 16,
-                background: "#fff",
-                borderTop: "1px solid #ddd",
-                borderBottom: "1px solid #ddd",
-                borderLeft: `4px solid ${p.team === 0 ? "#1a73e8" : "#4caf50"}`,
-                borderRight: "1px solid #ddd",
-                borderRadius: 10,
-                cursor: "pointer",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: 10,
-                fontFamily: "inherit",
-              }}
-              onMouseOver={(e) => (e.currentTarget.style.background = "#f8f9fa")}
-              onMouseOut={(e) => (e.currentTarget.style.background = "#fff")}
-            >
-              {p.avatar_url ? (
-                <img
-                  src={p.avatar_url}
-                  alt=""
-                  style={{ width: 56, height: 56, borderRadius: "50%", objectFit: "cover" }}
-                />
-              ) : (
-                <div
+          .map((p) => {
+            // Per-player tallies. Losses are intentionally not counted here —
+            // they depend on the loss-attribution logic that only runs once a
+            // player is picked, and their exact total would mislead (some get
+            // dismissed or roll into flags). The coach still sees loss items
+            // as soon as they open the queue.
+            const myFlags = flags.filter(
+              (f) => shotOwner.get(f.shot_id) === p.player_index,
+            );
+            const mySequences = sequences.filter(
+              (s) => s.player_id === p.id || (s.player_ids ?? []).includes(p.id),
+            );
+            const total = myFlags.length + mySequences.length;
+
+            // Reviewed = same rule as isItemReviewed: FPTM or drills for any
+            // kind, plus what_went_wrong for sequences. Flags intentionally
+            // do NOT count their `note` — that's the pre-populated
+            // note-to-self written at flag creation time in Analyze, not a
+            // product of review.
+            function hasReviewContent(
+              row: { fptm: FptmValue | null; drills: string | null },
+              extraNote: string | null = null,
+            ): boolean {
+              const fptm = row.fptm;
+              if (fptm && Object.keys(fptm).length > 0) return true;
+              if (row.drills && row.drills.trim()) return true;
+              return !!(extraNote && extraNote.trim());
+            }
+            const reviewed =
+              myFlags.filter((f) =>
+                // No note fallback for flags.
+                hasReviewContent({
+                  fptm: f.fptm as FptmValue | null,
+                  drills: f.drills,
+                }),
+              ).length +
+              mySequences.filter((s) =>
+                hasReviewContent(
+                  {
+                    fptm: s.fptm as FptmValue | null,
+                    drills: s.drills,
+                  },
+                  s.what_went_wrong,
+                ),
+              ).length;
+            const pct = total > 0 ? Math.round((reviewed / total) * 100) : 0;
+
+            const statusColor = total === 0
+              ? "#9ca3af"
+              : pct === 100
+              ? "#1e7e34"
+              : pct >= 50
+              ? "#d97706"
+              : "#c62828";
+            const statusLabel =
+              total === 0
+                ? "Nothing queued"
+                : pct === 100
+                ? "All reviewed"
+                : `${reviewed}/${total} reviewed`;
+
+            return (
+              <div
+                key={p.id}
+                style={{
+                  background: "#fff",
+                  borderTop: "1px solid #ddd",
+                  borderBottom: "1px solid #ddd",
+                  borderLeft: `4px solid ${p.team === 0 ? "#1a73e8" : "#4caf50"}`,
+                  borderRight: "1px solid #ddd",
+                  borderRadius: 10,
+                  overflow: "hidden",
+                }}
+              >
+                <button
+                  onClick={() => onPick(p.id)}
+                  title="Open the review queue for this player"
                   style={{
-                    width: 56,
-                    height: 56,
-                    borderRadius: "50%",
-                    background: "#e0e0e0",
+                    width: "100%",
+                    padding: "14px 14px 10px",
+                    background: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    textAlign: "left",
                     display: "flex",
                     alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 20,
-                    fontWeight: 600,
-                    color: "#666",
+                    gap: 12,
+                  }}
+                  onMouseOver={(e) => (e.currentTarget.style.background = "#f8f9fa")}
+                  onMouseOut={(e) => (e.currentTarget.style.background = "transparent")}
+                >
+                  {p.avatar_url ? (
+                    <img
+                      src={p.avatar_url}
+                      alt=""
+                      style={{ width: 48, height: 48, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        width: 48,
+                        height: 48,
+                        borderRadius: "50%",
+                        background: "#e0e0e0",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: 18,
+                        fontWeight: 600,
+                        color: "#666",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {p.display_name[0]}
+                    </div>
+                  )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color: "#222",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {p.display_name}
+                    </div>
+                    <div style={{ fontSize: 11, color: "#888" }}>
+                      Team {p.team}
+                    </div>
+                  </div>
+                </button>
+
+                {/* Counts — clicking jumps into the queue too */}
+                <button
+                  onClick={() => onPick(p.id)}
+                  style={{
+                    display: "flex",
+                    gap: 12,
+                    padding: "6px 14px 4px",
+                    width: "100%",
+                    background: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    justifyContent: "flex-start",
                   }}
                 >
-                  {p.display_name[0]}
+                  <span title={`${myFlags.length} flag${myFlags.length === 1 ? "" : "s"}`} style={countChipStyle("#d97706")}>
+                    🚩 {myFlags.length}
+                  </span>
+                  <span title={`${mySequences.length} sequence${mySequences.length === 1 ? "" : "s"}`} style={countChipStyle("#1a73e8")}>
+                    📋 {mySequences.length}
+                  </span>
+                </button>
+
+                {/* Status + progress bar */}
+                <div style={{ padding: "0 14px 10px" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: statusColor,
+                      textTransform: "uppercase",
+                      letterSpacing: 0.3,
+                      marginBottom: 4,
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: "50%",
+                        background: statusColor,
+                      }}
+                    />
+                    {statusLabel}
+                  </div>
+                  {total > 0 && (
+                    <div style={{ height: 4, background: "#f0f0f0", borderRadius: 2, overflow: "hidden" }}>
+                      <div
+                        style={{
+                          width: `${pct}%`,
+                          height: "100%",
+                          background: statusColor,
+                          transition: "width 0.2s",
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
-              )}
-              <div style={{ fontSize: 14, fontWeight: 600, color: "#333" }}>
-                {p.display_name}
+
+                {/* Actions — secondary entrypoints to the same player's
+                    Report and Presentation views, so the coach can jump
+                    there without going through the queue first. */}
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 6,
+                    padding: "6px 10px 10px",
+                    borderTop: "1px solid #f0f0f0",
+                  }}
+                >
+                  <Link
+                    to={`/org/${orgId}/games/${gameId}/report?playerId=${p.id}`}
+                    style={pickerActionStyle("#1a73e8")}
+                    title="Open the printable coaching report for this player"
+                  >
+                    📄 Report
+                  </Link>
+                  <Link
+                    to={`/org/${orgId}/games/${gameId}/present?playerId=${p.id}`}
+                    style={pickerActionStyle("#7c3aed")}
+                    title="Open the presentation deck for this player"
+                  >
+                    ▶ Present
+                  </Link>
+                </div>
               </div>
-              <div style={{ fontSize: 11, color: "#888" }}>Team {p.team}</div>
-            </button>
-          ))}
+            );
+          })}
       </div>
     </div>
   );
+}
+
+function countChipStyle(color: string): React.CSSProperties {
+  return {
+    fontSize: 12,
+    fontWeight: 600,
+    color,
+    background: `${color}11`,
+    border: `1px solid ${color}33`,
+    padding: "3px 8px",
+    borderRadius: 10,
+  };
+}
+
+function pickerActionStyle(color: string): React.CSSProperties {
+  return {
+    flex: 1,
+    textAlign: "center",
+    padding: "5px 10px",
+    fontSize: 11,
+    fontWeight: 700,
+    letterSpacing: 0.3,
+    textTransform: "uppercase",
+    color,
+    background: "#fff",
+    border: `1px solid ${color}`,
+    borderRadius: 5,
+    textDecoration: "none",
+    fontFamily: "inherit",
+  };
 }
 
 // ── styles ──

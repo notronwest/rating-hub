@@ -25,6 +25,17 @@ interface Props {
   highlights?: HighlightEvent[];
   sequences?: AnalysisSequence[];
   flags?: FlaggedShot[];
+  /** "loss:<rally_id>:<shot_id>" keys that the coach has marked as not
+   *  significant. Rallies whose fault-ending shot is dismissed get a muted
+   *  bottom border instead of the red "ended on fault" stripe. */
+  dismissedLossKeys?: Set<string>;
+  /** Rally ids the coach has already played through. Rallies NOT in this set
+   *  get a small blue "unseen" dot in the corner of the card. Auto-populated
+   *  by AnalyzePage as the playhead enters each rally. */
+  viewedRallyIds?: Set<string>;
+  /** Clear the viewed set — exposed on the legend row as a reset button so
+   *  the coach can re-walk the game fresh. */
+  onResetViewed?: () => void;
   activeRallyId: string | null;
   currentMs: number;
   onRallyClick: (rally: Rally) => void;
@@ -47,6 +58,9 @@ export default function RallyStrip({
   highlights = [],
   sequences = [],
   flags = [],
+  dismissedLossKeys,
+  viewedRallyIds,
+  onResetViewed,
   activeRallyId,
   currentMs,
   onRallyClick,
@@ -62,6 +76,12 @@ export default function RallyStrip({
   for (const s of shots) {
     if (!shotsByRally.has(s.rally_id)) shotsByRally.set(s.rally_id, []);
     shotsByRally.get(s.rally_id)!.push(s);
+  }
+  // Ensure per-rally shot arrays are ordered by shot_index so lastShot is
+  // reliably the rally-ending shot (which is what the fault-stripe color and
+  // flag-detection logic below depend on).
+  for (const [, arr] of shotsByRally) {
+    arr.sort((a, b) => a.shot_index - b.shot_index);
   }
 
   // Firefight set from highlights
@@ -124,13 +144,55 @@ export default function RallyStrip({
                 verticalAlign: "middle",
               }}
             />{" "}
-            ended on fault
+            ended on fault ·{" "}
+            <span
+              style={{
+                display: "inline-block",
+                width: 14,
+                height: 3,
+                background: "#9ca3af",
+                borderRadius: 1,
+                verticalAlign: "middle",
+              }}
+            />{" "}
+            flagged / dismissed
+          </span>
+          <span style={{ color: "#888", display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <span
+              style={{
+                display: "inline-block",
+                width: 7,
+                height: 7,
+                borderRadius: "50%",
+                background: "#1a73e8",
+              }}
+            />
+            unseen
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 11, color: "#666" }}>
           <span>
             {rallies.length} {rallies.length === 1 ? "rally" : "rallies"}
           </span>
+          {onResetViewed && (viewedRallyIds?.size ?? 0) > 0 && (
+            <button
+              onClick={onResetViewed}
+              title="Clear the unseen-rally markers and start over"
+              style={{
+                padding: "3px 8px",
+                fontSize: 10,
+                fontWeight: 600,
+                background: "#fff",
+                color: "#555",
+                border: "1px solid #ddd",
+                borderRadius: 4,
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              Reset seen ({viewedRallyIds?.size ?? 0})
+            </button>
+          )}
         </div>
       </div>
 
@@ -153,10 +215,41 @@ export default function RallyStrip({
           const isActive = r.id === activeRallyId;
           const isPlaying = currentMs >= r.start_ms && currentMs <= r.end_ms;
 
-          // Fault = last shot has an "err" field in raw_data
-          const lastShot = rallyShots[rallyShots.length - 1];
+          // Fault = the `is_final` shot has an `err` field in raw_data.
+          // NOTE: we can't just use rallyShots[last] — PB Vision sometimes
+          // tracks phantom shots after the point-ending one (see the Rally 6
+          // putaway case), so the array's last element isn't always the shot
+          // the coach flags. Pick the is_final shot explicitly so fault
+          // detection and flag-match below line up with ShotSequence.
+          const lastShot =
+            rallyShots.find((s) => {
+              const raw = (s.raw_data ?? {}) as Record<string, unknown>;
+              return s.is_final && !!raw.err;
+            }) ?? rallyShots[rallyShots.length - 1];
           const lastRaw = (lastShot?.raw_data ?? {}) as Record<string, unknown>;
-          const hasFault = !!lastRaw.err;
+          const hasFault = !!lastShot?.is_final && !!lastRaw.err;
+          // Dismissed fault: the coach has explicitly marked this rally's
+          // fault-ending shot as "not significant". Show the stripe in a
+          // muted neutral color instead of alarm red so the rally card still
+          // communicates "ended on fault" without demanding attention.
+          const faultDismissed =
+            hasFault &&
+            lastShot != null &&
+            (dismissedLossKeys?.has(`loss:${r.id}:${lastShot.id}`) ?? false);
+          // Per docs/DESIGN_PREFERENCES.md §"States for review decisions":
+          // a flagged fault is "will review" and gets its own amber stripe —
+          // distinguishable from pending (red) and dismissed (gray).
+          const faultFlagged =
+            hasFault &&
+            lastShot != null &&
+            flags.some((f) => f.shot_id === lastShot.id);
+          // Flagged faults collapse into the same muted gray as dismissed —
+          // once the coach has committed to reviewing (or skipping) it, the
+          // rally shouldn't keep shouting for attention in the strip. Only
+          // pending faults stay red.
+          const faultStripeColor =
+            faultFlagged || faultDismissed ? "#9ca3af" : "#ef4444";
+          const isUnviewed = !(viewedRallyIds?.has(r.id) ?? true);
 
           const seqCount = sequenceCountByRally.get(r.id) ?? 0;
           const flagCount = flagCountByRally.get(r.id) ?? 0;
@@ -185,15 +278,17 @@ export default function RallyStrip({
                 gap: 3,
                 padding: "6px 0",
                 minHeight: 144,
+                position: "relative",
                 borderTop: `1px solid ${isActive ? "#1a73e8" : "#eee"}`,
                 borderBottom: `1px solid ${isActive ? "#1a73e8" : "#eee"}`,
                 borderLeft: `1px solid ${isActive ? "#1a73e8" : isPlaying ? "#4caf50" : "transparent"}`,
                 borderRight: `1px solid ${isActive ? "#1a73e8" : isPlaying ? "#4caf50" : "transparent"}`,
                 borderRadius: 6,
-                // Fault is communicated as a thin red stripe inset along the bottom
-                // edge — overlays existing borders without conflicting with
-                // active/playing highlight colors.
-                boxShadow: hasFault ? "inset 0 -3px 0 #ef4444" : undefined,
+                // Fault is communicated as a thin stripe inset along the bottom
+                // edge — red when unaddressed, muted gray when the coach has
+                // marked it "not significant". Overlays existing borders
+                // without conflicting with active/playing highlight colors.
+                boxShadow: hasFault ? `inset 0 -3px 0 ${faultStripeColor}` : undefined,
                 background: isActive ? "#e8f0fe" : isPlaying ? "#e6f4ea" : "#fafafa",
                 color: "#333",
                 cursor: "pointer",
@@ -208,6 +303,25 @@ export default function RallyStrip({
                 if (!isActive && !isPlaying) e.currentTarget.style.background = "#fafafa";
               }}
             >
+              {/* "Unseen" dot — auto-removed once the playhead has entered
+                  this rally's range once. Corner-dot style keeps the card's
+                  primary content centered. */}
+              {isUnviewed && (
+                <span
+                  aria-label="Not yet viewed"
+                  title="Not yet viewed"
+                  style={{
+                    position: "absolute",
+                    top: 4,
+                    right: 4,
+                    width: 7,
+                    height: 7,
+                    borderRadius: "50%",
+                    background: "#1a73e8",
+                  }}
+                />
+              )}
+
               {/* Rally # */}
               <span style={{ fontSize: 11, fontWeight: 600, color: isActive ? "#1a73e8" : "#555" }}>
                 {r.rally_index + 1}

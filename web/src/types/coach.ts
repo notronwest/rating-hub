@@ -8,6 +8,9 @@ export interface GameAnalysis {
   coach_id: string;
   video_url: string | null;
   overall_notes: string | null;
+  /** Coach's one-line framing of the report card — is this a "good job" /
+   *  "needs work" summary? Optional; null until the coach picks one. */
+  overall_tone: "good_job" | "needs_work" | null;
   is_public: boolean;
   dismissed_loss_keys: string[];
   created_at: string;

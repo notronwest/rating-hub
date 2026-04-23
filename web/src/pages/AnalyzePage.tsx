@@ -8,6 +8,7 @@ import {
   listFlaggedShots,
   flagShot,
   unflagShot,
+  updateFlagNote,
   setGameMuxPlaybackId,
   setDismissedLossKeys,
 } from "../lib/coachApi";
@@ -20,7 +21,7 @@ import ShotSequence from "../components/analyze/ShotSequence";
 import RallyStrip from "../components/analyze/RallyStrip";
 import ShotTooltip from "../components/analyze/ShotTooltip";
 import SequenceManager from "../components/analyze/SequenceManager";
-import FlaggedShotsPanel from "../components/analyze/FlaggedShotsPanel";
+import ReviewPointsPanel from "../components/analyze/ReviewPointsPanel";
 import PlayerHeaderBar from "../components/analyze/PlayerHeaderBar";
 import GameHeader from "../components/GameHeader";
 import type { RallyShot, GamePlayer } from "../types/database";
@@ -101,6 +102,30 @@ export default function AnalyzePage() {
 
   // Flagged shots
   const [flags, setFlags] = useState<FlaggedShot[]>([]);
+
+  // Which rallies the coach has viewed this session. Auto-populates as the
+  // video's playhead enters each rally's time range. Persisted to
+  // localStorage per game so refreshing the tab doesn't lose progress.
+  // Intentionally client-side — no DB round trip, no "review started"
+  // state-management overhead; can be reset with the clear button below.
+  const viewedKey = gameId ? `viewed-rallies:${gameId}` : null;
+  const [viewedRallyIds, setViewedRallyIds] = useState<Set<string>>(() => {
+    if (!viewedKey) return new Set();
+    try {
+      const raw = localStorage.getItem(viewedKey);
+      return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+  useEffect(() => {
+    if (!viewedKey) return;
+    try {
+      localStorage.setItem(viewedKey, JSON.stringify([...viewedRallyIds]));
+    } catch {
+      // storage full / denied — silently drop; in-memory state still works
+    }
+  }, [viewedKey, viewedRallyIds]);
 
   const localVideoRef = useRef<VideoPlayerHandle>(null);
   const {
@@ -268,19 +293,39 @@ export default function AnalyzePage() {
     setIsPaused(false);
   }
 
-  // Flagged shot handlers
+  // Flagged shot handlers.
+  //
+  // Flag + Dismiss are mutually exclusive per shot (see design note with the
+  // rally strip). Adding a flag always returns the shot to a non-dismissed
+  // state; removing a flag returns to "pending" (dismissed stays untouched
+  // since it couldn't have been active anyway — but we still defensively
+  // reconcile on add).
   async function handleToggleFlag(shotId: string) {
-    console.log("[flag] toggle", shotId, "analysis?", !!analysis);
     if (!analysis) {
       alert("Analysis not loaded yet — try again in a moment.");
       return;
     }
     const alreadyFlagged = flags.some((f) => f.shot_id === shotId);
+    const shot = shots.find((s) => s.id === shotId);
     try {
       if (alreadyFlagged) {
         await unflagShot(analysis.id, shotId);
         setFlags((prev) => prev.filter((f) => f.shot_id !== shotId));
       } else {
+        // If the shot was previously dismissed (e.g. coach dismissed its
+        // rally-ending fault), remove that dismissal silently so flag + dismiss
+        // stay mutually exclusive.
+        if (shot) {
+          const key = `loss:${shot.rally_id}:${shot.id}`;
+          const current = analysis.dismissed_loss_keys ?? [];
+          if (current.includes(key)) {
+            const next = current.filter((k) => k !== key);
+            setAnalysis((a) => (a ? { ...a, dismissed_loss_keys: next } : a));
+            await setDismissedLossKeys(analysis.id, next).catch(() => {
+              setAnalysis((a) => (a ? { ...a, dismissed_loss_keys: current } : a));
+            });
+          }
+        }
         const created = await flagShot({
           analysisId: analysis.id,
           shotId,
@@ -392,6 +437,20 @@ export default function AnalyzePage() {
       // Roll back on failure
       setAnalysis((a) => (a ? { ...a, dismissed_loss_keys: current } : a));
       alert(`Failed to update: ${e instanceof Error ? e.message : String(e)}`);
+      return;
+    }
+    // Mutual exclusion: if the shot was flagged, clear the flag silently —
+    // "will review" (flag) and "won't review" (dismiss) can't coexist.
+    if (dismissed) {
+      const flag = flags.find((f) => f.shot_id === shot.id);
+      if (flag) {
+        try {
+          await unflagShot(analysis.id, shot.id);
+          setFlags((prev) => prev.filter((f) => f.shot_id !== shot.id));
+        } catch (e) {
+          console.error("[dismiss] failed to clear stale flag:", e);
+        }
+      }
     }
   }
 
@@ -407,16 +466,37 @@ export default function AnalyzePage() {
     }
   }, [currentMs, isLooping, activeShotId, shots]);
 
+  // Auto-mark a rally as "viewed" the instant the playhead enters its time
+  // range. No duration threshold — skimming counts too. We only add to the
+  // set (never remove) so the visual indicator fades as the coach works
+  // through the game. Reset is via a manual button in the rally-strip legend.
+  useEffect(() => {
+    if (rallies.length === 0) return;
+    const inside = rallies.find(
+      (r) => currentMs >= r.start_ms && currentMs <= r.end_ms,
+    );
+    if (!inside) return;
+    if (viewedRallyIds.has(inside.id)) return;
+    setViewedRallyIds((prev) => {
+      if (prev.has(inside.id)) return prev;
+      const next = new Set(prev);
+      next.add(inside.id);
+      return next;
+    });
+  }, [currentMs, rallies, viewedRallyIds]);
+
   // Rally loop: when a rally is explicitly selected and no shot/sequence is
-  // actively looping, keep the selected rally playing on repeat.
+  // actively looping, keep the selected rally playing on repeat. We snap
+  // back the instant we cross end_ms (no buffer) so the video never bleeds
+  // into the dead time or next rally — "pick a rally, it loops until you
+  // pick another."
   useEffect(() => {
     if (!selectedRallyId) return;
     if (activeShotId && isLooping) return; // shot loop wins
     if (activeSequenceId || draftShotIds.size > 0) return; // sequence loop wins
     const rally = rallies.find((r) => r.id === selectedRallyId);
     if (!rally) return;
-    const endBuffer = 500;
-    if (currentMs > rally.end_ms + endBuffer) {
+    if (currentMs >= rally.end_ms) {
       videoRef.seek(rally.start_ms);
     }
   }, [currentMs, selectedRallyId, activeShotId, isLooping, activeSequenceId, draftShotIds, rallies]);
@@ -530,6 +610,30 @@ export default function AnalyzePage() {
 
   // Set of flagged shot IDs for fast lookup
   const flaggedShotIds = new Set(flags.map((f) => f.shot_id));
+  // shot_id → saved flag note (or null). Drives the pencil / popover in the
+  // shot list so the coach can jot a quick "note to self" the instant they
+  // flag something.
+  const flagNoteByShotId = new Map<string, string | null>(
+    flags.map((f) => [f.shot_id, f.note]),
+  );
+
+  async function handleUpdateFlagNote(shotId: string, note: string | null) {
+    const flag = flags.find((f) => f.shot_id === shotId);
+    if (!flag) return;
+    try {
+      await updateFlagNote(flag.id, note);
+      setFlags((prev) =>
+        prev.map((f) => (f.id === flag.id ? { ...f, note } : f)),
+      );
+    } catch (e) {
+      console.error("[flag note] update failed:", e);
+      alert(
+        `Failed to save flag note: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      );
+    }
+  }
 
   // Shots belonging to any saved sequence on the *current* rally — used to
   // highlight them in the shot list so the coach can see prior work at a glance.
@@ -589,6 +693,9 @@ export default function AnalyzePage() {
             highlights={game.highlights ?? []}
             sequences={sequences}
             flags={flags}
+            dismissedLossKeys={dismissedLossKeys}
+            viewedRallyIds={viewedRallyIds}
+            onResetViewed={() => setViewedRallyIds(new Set())}
             activeRallyId={currentRally?.id ?? null}
             currentMs={currentMs}
             onRallyClick={(r) => {
@@ -674,6 +781,60 @@ export default function AnalyzePage() {
                   )}
                 </div>
 
+                {/* Playback controls — always visible, attached to the video.
+                    Previously these lived on the shot-rally panel and only
+                    showed when a specific shot was selected; moved here so
+                    the coach can pause / adjust speed / toggle loop without
+                    first clicking a shot. */}
+                <div
+                  style={{
+                    marginTop: 8,
+                    display: "flex",
+                    gap: 6,
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                    padding: "8px 10px",
+                    background: "#f8f9fa",
+                    border: "1px solid #e2e2e2",
+                    borderRadius: 8,
+                  }}
+                >
+                  <button
+                    onClick={handleTogglePlay}
+                    style={playbackBtn(false)}
+                    title={isPaused ? "Play" : "Pause"}
+                  >
+                    {isPaused ? "▶ Play" : "⏸ Pause"}
+                  </button>
+                  <button
+                    onClick={handleToggleLoop}
+                    style={playbackBtn(isLooping)}
+                    title="Loop the active shot on repeat"
+                  >
+                    {isLooping ? "🔁 Looping" : "🔁 Loop"}
+                  </button>
+                  <span
+                    style={{
+                      width: 1,
+                      background: "#ddd",
+                      alignSelf: "stretch",
+                      margin: "0 2px",
+                    }}
+                  />
+                  <span style={{ fontSize: 11, color: "#666", marginRight: 2 }}>
+                    Speed
+                  </span>
+                  {[0.25, 0.5, 0.75, 1, 1.5, 2].map((r) => (
+                    <button
+                      key={r}
+                      onClick={() => handleSetPlaybackRate(r)}
+                      style={playbackBtn(playbackRate === r)}
+                    >
+                      {r}×
+                    </button>
+                  ))}
+                </div>
+
                 <div style={{ marginTop: 6, display: "flex", gap: 8, alignItems: "center" }}>
                   <button
                     onClick={openPopout}
@@ -746,6 +907,8 @@ export default function AnalyzePage() {
                 onToggleDraftShot={handleToggleDraftShot}
                 flaggedShotIds={flaggedShotIds}
                 onToggleFlag={handleToggleFlag}
+                flagNoteByShotId={flagNoteByShotId}
+                onUpdateFlagNote={handleUpdateFlagNote}
                 savedSequenceShotIds={savedSequenceShotIds}
                 faultShotIds={faultShotIds}
                 dismissedLossKeys={dismissedLossKeys}
@@ -776,29 +939,26 @@ export default function AnalyzePage() {
             </div>
           )}
 
-          {/* Flagged shots — coach bookmarks */}
-          {flags.length > 0 && (
-            <div style={{ marginTop: 16 }}>
-              <FlaggedShotsPanel
-                flags={flags}
-                shots={shots}
-                rallies={rallies}
-                players={players}
-                onJumpToShot={handleJumpToFlaggedShot}
-                onUnflag={handleToggleFlag}
-                onReload={reloadNotes}
-                onPromoted={(seqId) => {
-                  // reloadNotes has already been called; push the
-                  // sequence id into the URL so the existing
-                  // ?sequence=<id> effect activates it once the
-                  // sequences state has caught up.
-                  const next = new URLSearchParams(searchParams);
-                  next.set("sequence", seqId);
-                  setSearchParams(next, { replace: true });
-                }}
-              />
-            </div>
-          )}
+          {/* Review points — unified panel for flags, sequences, and auto-faults */}
+          <div style={{ marginTop: 16 }}>
+            <ReviewPointsPanel
+              analysis={analysis}
+              flags={flags}
+              sequences={sequences}
+              shots={shots}
+              rallies={rallies}
+              players={players}
+              onJumpToShot={handleJumpToFlaggedShot}
+              onActivateSequence={handleActivateSequence}
+              onSetDismissedLossKeys={async (keys) => {
+                if (!analysis) return;
+                await setDismissedLossKeys(analysis.id, keys);
+                setAnalysis((a) =>
+                  a ? { ...a, dismissed_loss_keys: keys } : a,
+                );
+              }}
+            />
+          </div>
 
         </>
       ) : (
@@ -819,6 +979,21 @@ const kbdStyle: React.CSSProperties = {
   borderRadius: 3,
   fontFamily: "monospace",
 };
+
+/** Small pill button used by the playback-controls row under the video. */
+function playbackBtn(active: boolean): React.CSSProperties {
+  return {
+    padding: "4px 10px",
+    fontSize: 11,
+    fontWeight: active ? 700 : 500,
+    color: active ? "#fff" : "#555",
+    background: active ? "#1a73e8" : "#fff",
+    border: `1px solid ${active ? "#1a73e8" : "#ddd"}`,
+    borderRadius: 5,
+    cursor: "pointer",
+    fontFamily: "inherit",
+  };
+}
 
 function formatMsStatic(ms: number): string {
   const s = Math.floor(ms / 1000);

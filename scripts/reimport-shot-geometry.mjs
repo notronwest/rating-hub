@@ -137,7 +137,15 @@ function buildShotPatch(shot) {
   if (shot.errors && Object.keys(shot.errors).length > 0) {
     patch.shot_errors = shot.errors;
   }
-  if (shot.shot_type) patch.shot_type = shot.shot_type;
+  // Specialty flags override augmented's stroke-level shot_type so reset /
+  // passing / poach / putaway / speedup keep their semantic label.
+  let resolvedType = shot.shot_type ?? null;
+  if (shot.is_reset) resolvedType = "reset";
+  else if (shot.is_passing) resolvedType = "passing";
+  else if (shot.is_poach) resolvedType = "poach";
+  else if (shot.is_putaway) resolvedType = "putaway";
+  else if (shot.is_speedup) resolvedType = "speedup";
+  if (resolvedType) patch.shot_type = resolvedType;
 
   return Object.keys(patch).length > 0 ? patch : null;
 }

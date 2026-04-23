@@ -10,6 +10,10 @@ import ImportPage from "./pages/ImportPage";
 import LoginPage from "./pages/LoginPage";
 import AnalyzePage from "./pages/AnalyzePage";
 import CoachReviewPage from "./pages/CoachReviewPage";
+import GameReportPage from "./pages/GameReportPage";
+import SessionReportPage from "./pages/SessionReportPage";
+import PlayerRatingReportPage from "./pages/PlayerRatingReportPage";
+import PresentationPage from "./pages/PresentationPage";
 import CoachDashboardPage from "./pages/CoachDashboardPage";
 import PbvLinkPage from "./pages/PbvLinkPage";
 import VideoPopoutPage from "./pages/VideoPopoutPage";
@@ -23,14 +27,32 @@ export default function App() {
       <Route path="/pbv-link" element={<PbvLinkPage />} />
       <Route path="/video-popout/:gameId" element={<VideoPopoutPage />} />
 
+      {/* Presentation deck — full-screen, no AdminLayout chrome. Rendered at
+          the top level so `?share=1` works for anonymous customers (the
+          underlying data reads are gated by game_analyses.is_public RLS). */}
+      <Route
+        path="/org/:orgId/games/:gameId/present"
+        element={<PresentationPage />}
+      />
+
       {/* Org-scoped pages with shared layout */}
       <Route path="/org/:orgId" element={<AdminLayout />}>
         <Route index element={<PlayerListPage />} />
         <Route path="players" element={<PlayerListPage />} />
         <Route path="players/:slug" element={<PlayerDetailPage />} />
+        <Route
+          path="players/:slug/rating-report"
+          element={<PlayerRatingReportPage />}
+        />
         <Route path="sessions" element={<SessionListPage />} />
         <Route path="sessions/:sessionId" element={<SessionDetailPage />} />
+        <Route path="sessions/:sessionId/report" element={<SessionReportPage />} />
+        <Route
+          path="sessions/:sessionId/rating-report"
+          element={<PlayerRatingReportPage />}
+        />
         <Route path="games/:gameId" element={<GameDetailPage />} />
+        <Route path="games/:gameId/report" element={<GameReportPage />} />
         <Route path="import" element={<ImportPage />} />
 
         {/* Coach-only pages */}

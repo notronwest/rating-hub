@@ -19,9 +19,24 @@ export default function AdminLayout() {
     : BASE_NAV;
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", fontFamily: "system-ui" }}>
+    <div
+      className="admin-layout"
+      style={{ display: "flex", minHeight: "100vh", fontFamily: "system-ui" }}
+    >
+      {/* Global print styles — hide the nav chrome so `window.print()` on
+          any nested page (rating reports, game report, etc.) produces a
+          clean PDF without the sidebar or player-context bar bleeding in.
+          Each report page layers its own @media print rules on top. */}
+      <style>{`
+        @media print {
+          .admin-sidebar, .admin-context-bar { display: none !important; }
+          .admin-main { padding: 0 !important; overflow: visible !important; }
+          .admin-layout { min-height: 0 !important; display: block !important; }
+        }
+      `}</style>
       {/* Sidebar */}
       <nav
+        className="admin-sidebar"
         style={{
           width: 220,
           borderRight: "1px solid #e2e2e2",
@@ -155,8 +170,13 @@ export default function AdminLayout() {
       </nav>
 
       {/* Main content */}
-      <main style={{ flex: 1, padding: 24, overflow: "auto" }}>
-        <PlayerContextBar />
+      <main
+        className="admin-main"
+        style={{ flex: 1, padding: 24, overflow: "auto" }}
+      >
+        <div className="admin-context-bar">
+          <PlayerContextBar />
+        </div>
         <Outlet />
       </main>
     </div>

@@ -4,6 +4,7 @@ import { supabase } from "../supabase";
 import { useAuth } from "../auth/AuthProvider";
 import { computeHighlights, GameHighlightsCompact, type GameHighlightData } from "../components/GameHighlights";
 import type { GamePlayerShotType } from "../types/database";
+import EmailRatingReportsPanel from "../components/report/EmailRatingReportsPanel";
 
 interface SessionInfo {
   id: string;
@@ -30,6 +31,16 @@ interface GamePlayerInfo {
   rating_overall: number | null;
   shot_count: number | null;
   shot_accuracy: unknown;
+}
+
+/**
+ * Extract the `gm-N` numeric suffix from a game's session_name.
+ * e.g. `kr-do-pk-2026-04-19-gm-3` → 3. Returns null if no suffix.
+ */
+function extractGameIdx(sessionName: string | null): number | null {
+  if (!sessionName) return null;
+  const m = sessionName.match(/gm-(\d+)$/i);
+  return m ? parseInt(m[1], 10) : null;
 }
 
 export default function SessionDetailPage() {
@@ -69,15 +80,31 @@ export default function SessionDetailPage() {
         .eq("session_id", sessionId)
         .order("played_at", { ascending: true });
 
-      setGames(gameRows ?? []);
+      // Display order: prefer the "gm-N" suffix from session_name (how the
+      // session-manager numbers uploads) — that's what the coach thinks of
+      // as Game 1..N. Fall back to played_at for any row without a suffix
+      // so the list stays stable.
+      const ordered = [...(gameRows ?? [])].sort((a, b) => {
+        const ai = extractGameIdx(a.session_name);
+        const bi = extractGameIdx(b.session_name);
+        if (ai != null && bi != null) return ai - bi;
+        if (ai != null) return -1;
+        if (bi != null) return 1;
+        // both fall through to played_at asc
+        return 0;
+      });
+      setGames(ordered);
 
-      // Get game_players, rallies, shot types for these games
+      // Get game_players, rallies, shot types for these games.
+      // We also pull rally_shots filtered to 3rd-shot drops so we can derive
+      // the count ourselves when the Stats-format import never ran (which
+      // is the case for games imported only via the compact webhook).
       const gameIds = (gameRows ?? []).map((g) => g.id);
       if (gameIds.length > 0) {
-        const [gpRes, rallyRes, stRes] = await Promise.all([
+        const [gpRes, rallyRes, stRes, rallyIdsRes] = await Promise.all([
           supabase
             .from("game_players")
-            .select("game_id, player_id, team, won, rating_overall, shot_count, shot_accuracy")
+            .select("game_id, player_id, team, won, rating_overall, shot_count, shot_accuracy, player_index")
             .in("game_id", gameIds)
             .order("player_index"),
           supabase
@@ -87,6 +114,10 @@ export default function SessionDetailPage() {
           supabase
             .from("game_player_shot_types")
             .select("*")
+            .in("game_id", gameIds),
+          supabase
+            .from("rallies")
+            .select("id, game_id")
             .in("game_id", gameIds),
         ]);
 
@@ -108,6 +139,56 @@ export default function SessionDetailPage() {
           const arr = stMap.get(st.game_id) ?? [];
           arr.push(st);
           stMap.set(st.game_id, arr);
+        }
+
+        // Synthesize missing `third_drops` entries from rally_shots so the
+        // highlight count is accurate even without a Stats-format import.
+        const rallyIds = (rallyIdsRes.data ?? []).map((r) => r.id);
+        const rallyToGame = new Map<string, string>();
+        for (const r of rallyIdsRes.data ?? []) rallyToGame.set(r.id, r.game_id);
+
+        if (rallyIds.length > 0) {
+          const { data: dropShots } = await supabase
+            .from("rally_shots")
+            .select("rally_id, player_index")
+            .in("rally_id", rallyIds)
+            .eq("shot_index", 2)
+            .eq("shot_type", "drop");
+
+          // (game, player_idx) → count
+          const counts = new Map<string, number>();
+          for (const s of dropShots ?? []) {
+            if (s.player_index == null) continue;
+            const gameId = rallyToGame.get(s.rally_id);
+            if (!gameId) continue;
+            const key = `${gameId}::${s.player_index}`;
+            counts.set(key, (counts.get(key) ?? 0) + 1);
+          }
+
+          // Inject synthetic third_drops rows where the stats table lacks them.
+          for (const [key, count] of counts) {
+            const [gameId, playerIdxStr] = key.split("::");
+            const playerIdx = parseInt(playerIdxStr, 10);
+            const gp = gps.find(
+              (x) => x.game_id === gameId && x.player_index === playerIdx,
+            );
+            if (!gp) continue;
+            const existing = stMap.get(gameId) ?? [];
+            const already = existing.some(
+              (st) => st.player_id === gp.player_id && st.shot_type === "third_drops",
+            );
+            if (already) continue;
+            existing.push({
+              game_id: gameId,
+              player_id: gp.player_id,
+              shot_type: "third_drops",
+              count,
+              average_quality: null,
+              outcome_stats: null,
+              speed_stats: null,
+            } as GamePlayerShotType);
+            stMap.set(gameId, existing);
+          }
         }
         setShotTypesByGame(stMap);
 
@@ -241,9 +322,46 @@ export default function SessionDetailPage() {
         </Link>
       )}
 
-      <h2 style={{ fontSize: 20, fontWeight: 700, marginTop: 8, marginBottom: 4 }}>
-        {session.label || "Session"}
-      </h2>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8, marginBottom: 4 }}>
+        <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>
+          {session.label || "Session"}
+        </h2>
+        <span style={{ flex: 1 }} />
+        <Link
+          to={`/org/${orgId}/sessions/${session.id}/rating-report`}
+          title="Data-only stats report for each player in this session — works without any coach review"
+          style={{
+            padding: "6px 12px",
+            fontSize: 12,
+            fontWeight: 600,
+            background: "#fff",
+            color: "#1a73e8",
+            border: "1px solid #1a73e8",
+            borderRadius: 6,
+            textDecoration: "none",
+            fontFamily: "inherit",
+          }}
+        >
+          📊 Rating report
+        </Link>
+        <Link
+          to={`/org/${orgId}/sessions/${session.id}/report`}
+          title="Coach's session report — rollup + recurring themes + per-game coach notes"
+          style={{
+            padding: "6px 12px",
+            fontSize: 12,
+            fontWeight: 600,
+            background: "#1a73e8",
+            color: "#fff",
+            border: "1px solid #1a73e8",
+            borderRadius: 6,
+            textDecoration: "none",
+            fontFamily: "inherit",
+          }}
+        >
+          📄 Session report
+        </Link>
+      </div>
       <div style={{ fontSize: 14, color: "#666", marginBottom: 24 }}>
         {new Date(session.played_date + "T12:00:00").toLocaleDateString(undefined, {
           weekday: "long",
@@ -253,6 +371,13 @@ export default function SessionDetailPage() {
         })}
         {" · "}
         {totalGames} games
+      </div>
+
+      {/* Email rating reports — button + delivery log. Sits above the
+          player grid so it reads as a session-level action, not a
+          per-player one. */}
+      <div style={{ marginBottom: 22 }}>
+        <EmailRatingReportsPanel sessionId={session.id} />
       </div>
 
       {/* Player summary */}
@@ -309,7 +434,7 @@ export default function SessionDetailPage() {
             const gameGps = gamePlayers.filter((gp) => gp.game_id === g.id);
             const hlData: GameHighlightData = {
               gameId: g.id,
-              gameName: g.session_name || `Game ${idx + 1}`,
+              gameName: `Game ${idx + 1}`,
               rallies: ralliesByGame.get(g.id) ?? [],
               players: gameGps.map((gp) => ({
                 playerName: playerNames.get(gp.player_id) ?? "?",
@@ -335,7 +460,7 @@ export default function SessionDetailPage() {
                     to={`/org/${orgId}/games/${g.id}${playerQuery}`}
                     style={{ color: "#1a73e8", textDecoration: "none", fontWeight: 500 }}
                   >
-                    {g.session_name || `Game ${idx + 1}`}
+                    {`Game ${idx + 1}`}
                   </Link>
                   {hl.length > 0 && (
                     <div style={{ marginTop: 6 }}>

@@ -55,7 +55,7 @@ export async function getAnalysisByGameId(
 
 export async function updateAnalysis(
   analysisId: string,
-  patch: Partial<Pick<GameAnalysis, "video_url" | "overall_notes" | "is_public">>,
+  patch: Partial<Pick<GameAnalysis, "video_url" | "overall_notes" | "overall_tone" | "is_public">>,
 ): Promise<void> {
   const { error } = await supabase
     .from("game_analyses")
@@ -77,6 +77,73 @@ export async function setDismissedLossKeys(
     .update({ dismissed_loss_keys: keys })
     .eq("id", analysisId);
   if (error) throw new Error(error.message);
+}
+
+// ─────────────────────────────────────────────────────────────────
+// WMPC Analysis Topic recommendations
+// ─────────────────────────────────────────────────────────────────
+
+export interface TopicRecommendationRow {
+  id: string;
+  analysis_id: string;
+  player_id: string;
+  topic_id: string;
+  recommendation: string | null;
+  tags: string[];
+  dismissed: boolean;
+  fptm: unknown;            // FptmValue from lib/fptm — untyped at the DB edge
+  drills: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Load every recommendation belonging to one analysis. If `playerId` is
+ *  provided, only that player's rows are returned; omit it to fetch all
+ *  players for the analysis (used by the game report). */
+export async function listTopicRecommendations(
+  analysisId: string,
+  playerId?: string,
+): Promise<TopicRecommendationRow[]> {
+  let q = supabase
+    .from("analysis_topic_recommendations")
+    .select("*")
+    .eq("analysis_id", analysisId);
+  if (playerId) q = q.eq("player_id", playerId);
+  const { data, error } = await q;
+  if (error) throw new Error(error.message);
+  return (data ?? []) as TopicRecommendationRow[];
+}
+
+/** Upsert a recommendation for (analysis, player, topic). */
+export async function upsertTopicRecommendation(params: {
+  analysisId: string;
+  playerId: string;
+  topicId: string;
+  recommendation: string | null;
+  tags: string[];
+  dismissed: boolean;
+  fptm?: unknown;
+  drills?: string | null;
+}): Promise<TopicRecommendationRow> {
+  const { data, error } = await supabase
+    .from("analysis_topic_recommendations")
+    .upsert(
+      {
+        analysis_id: params.analysisId,
+        player_id: params.playerId,
+        topic_id: params.topicId,
+        recommendation: params.recommendation,
+        tags: params.tags,
+        dismissed: params.dismissed,
+        fptm: params.fptm ?? null,
+        drills: params.drills ?? null,
+      },
+      { onConflict: "analysis_id,player_id,topic_id" },
+    )
+    .select("*")
+    .single();
+  if (error) throw new Error(error.message);
+  return data as TopicRecommendationRow;
 }
 
 /** Save a Mux playback ID on the game row. */
@@ -430,4 +497,158 @@ export async function updateFlagFptm(
     .update(patch)
     .eq("id", id);
   if (error) throw new Error(error.message);
+}
+
+// ─────────────────────────── Coaching themes (AI) ───────────────────────────
+
+/** A single "common theme" row on a session × player. Persisted in
+ *  `player_coaching_themes`. */
+export interface CoachingTheme {
+  id: string;
+  org_id: string;
+  player_id: string;
+  session_id: string;
+  title: string;
+  problem: string;
+  solution: string;
+  order_idx: number;
+  source: "ai" | "coach";
+  edited: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listCoachingThemes(
+  sessionId: string,
+  playerId: string,
+): Promise<CoachingTheme[]> {
+  const { data, error } = await supabase
+    .from("player_coaching_themes")
+    .select("*")
+    .eq("session_id", sessionId)
+    .eq("player_id", playerId)
+    .order("order_idx");
+  if (error) throw new Error(error.message);
+  return (data ?? []) as CoachingTheme[];
+}
+
+export async function updateCoachingTheme(
+  id: string,
+  patch: Partial<Pick<CoachingTheme, "title" | "problem" | "solution" | "order_idx">>,
+): Promise<void> {
+  // Any coach edit flips the row to edited + source='coach' so the next
+  // AI regenerate pass doesn't stomp it.
+  const { error } = await supabase
+    .from("player_coaching_themes")
+    .update({ ...patch, edited: true, source: "coach" })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteCoachingTheme(id: string): Promise<void> {
+  const { error } = await supabase
+    .from("player_coaching_themes")
+    .delete()
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+// ─────────────────────────── Rating-report emails ───────────────────────────
+
+export interface RatingReportEmailRow {
+  id: string;
+  org_id: string;
+  session_id: string;
+  player_id: string;
+  email_to: string;
+  sent_by: string | null;
+  resend_message_id: string | null;
+  status: string;
+  last_error: string | null;
+  sent_at: string | null;
+  delivered_at: string | null;
+  opened_at: string | null;
+  clicked_at: string | null;
+  bounced_at: string | null;
+  open_count: number;
+  click_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listRatingReportEmails(
+  sessionId: string,
+): Promise<RatingReportEmailRow[]> {
+  const { data, error } = await supabase
+    .from("rating_report_emails")
+    .select("*")
+    .eq("session_id", sessionId)
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as RatingReportEmailRow[];
+}
+
+export async function sendRatingReports(args: {
+  sessionId: string;
+  playerIds?: string[];
+  sentBy?: string;
+}): Promise<{
+  results: Array<{
+    playerId: string;
+    email: string | null;
+    logId?: string;
+    status: string;
+    error?: string;
+  }>;
+}> {
+  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-rating-reports`;
+  const secret = import.meta.env.VITE_COACH_AI_SECRET as string | undefined;
+  if (!secret) {
+    throw new Error(
+      "Emails are disabled — set VITE_COACH_AI_SECRET in web/.env.local and RESEND_API_KEY on the edge function.",
+    );
+  }
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${secret}`,
+    },
+    body: JSON.stringify(args),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body?.error ?? `Request failed (${res.status})`);
+  }
+  return body;
+}
+
+/** Call the `generate-themes` edge function to (re)generate AI themes
+ *  for a session × player. Requires `VITE_COACH_AI_SECRET` to be set in
+ *  the client env and match the edge function's `WEBHOOK_SECRET`. */
+export async function generateCoachingThemes(args: {
+  sessionId: string;
+  playerId: string;
+  n?: number;
+}): Promise<CoachingTheme[]> {
+  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-themes`;
+  const secret = import.meta.env.VITE_COACH_AI_SECRET as string | undefined;
+  if (!secret) {
+    throw new Error(
+      "AI themes are disabled — set VITE_COACH_AI_SECRET in web/.env.local and ANTHROPIC_API_KEY on the edge function.",
+    );
+  }
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${secret}`,
+    },
+    body: JSON.stringify(args),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body?.error ?? `Request failed (${res.status})`);
+  }
+  return body.themes as CoachingTheme[];
 }

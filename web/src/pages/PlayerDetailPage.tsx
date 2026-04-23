@@ -226,9 +226,26 @@ export default function PlayerDetailPage() {
           <h2 style={{ fontSize: 26, fontWeight: 700, marginBottom: 4, marginTop: 0 }}>
             {player.display_name}
           </h2>
-          <div style={{ fontSize: 14, color: "#666" }}>
+          <div style={{ fontSize: 14, color: "#666", marginBottom: 8 }}>
             {agg ? `${agg.games_played} games` : ""}
           </div>
+          <Link
+            to={`/org/${orgId}/players/${player.slug}/rating-report`}
+            style={{
+              display: "inline-block",
+              padding: "6px 12px",
+              fontSize: 12,
+              fontWeight: 600,
+              background: "#1a73e8",
+              color: "#fff",
+              border: "1px solid #1a73e8",
+              borderRadius: 6,
+              textDecoration: "none",
+              fontFamily: "inherit",
+            }}
+          >
+            📄 Rating report
+          </Link>
         </div>
 
         {/* Center: overall rating */}

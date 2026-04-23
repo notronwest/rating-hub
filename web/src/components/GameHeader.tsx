@@ -49,6 +49,18 @@ interface SessionLite {
 interface SiblingGame {
   id: string;
   played_at: string | null;
+  session_name: string | null;
+}
+
+/**
+ * Extract the `gm-N` numeric suffix from a game's session_name.
+ * e.g. `kr-do-pk-2026-04-19-gm-3` → 3. Returns null if no suffix.
+ * Same helper the Session page uses so the two surfaces agree.
+ */
+function extractGameIdx(sessionName: string | null): number | null {
+  if (!sessionName) return null;
+  const m = sessionName.match(/gm-(\d+)$/i);
+  return m ? parseInt(m[1], 10) : null;
 }
 
 export default function GameHeader({
@@ -100,13 +112,24 @@ export default function GameHeader({
             .single(),
           supabase
             .from("games")
-            .select("id, played_at")
+            .select("id, played_at, session_name")
             .eq("session_id", g.session_id)
             .order("played_at", { ascending: true }),
         ]);
         if (cancelled) return;
         if (sessRes.data) setSession(sessRes.data);
-        setSiblings(sibsRes.data ?? []);
+        // Prefer the `gm-N` suffix for ordering — matches SessionDetailPage
+        // so "Game 1" means the same thing on both surfaces. Rows without a
+        // suffix fall through to the played_at order.
+        const ordered = [...(sibsRes.data ?? [])].sort((a, b) => {
+          const ai = extractGameIdx(a.session_name);
+          const bi = extractGameIdx(b.session_name);
+          if (ai != null && bi != null) return ai - bi;
+          if (ai != null) return -1;
+          if (bi != null) return 1;
+          return 0;
+        });
+        setSiblings(ordered);
       }
 
       // Roster
@@ -198,11 +221,18 @@ export default function GameHeader({
   const reviewStarted =
     reviewCount != null &&
     reviewCount.sequences + reviewCount.flags + reviewCount.notes > 0;
-  const reviewStatusText = reviewStarted
-    ? reviewPartsText(reviewCount!)
-    : reviewCount == null
-    ? null
-    : "Review not started";
+  // On the Review tab itself the per-player picker shows flag/sequence
+  // counts + status per player, so the aggregate chip here is redundant
+  // (and inaccurate when there's no selected player). We still want the
+  // tab's blue dot to signal "work has started" — just not the totals.
+  const reviewStatusText =
+    mode === "review"
+      ? null
+      : reviewStarted
+      ? reviewPartsText(reviewCount!)
+      : reviewCount == null
+      ? null
+      : "Review not started";
 
   const sessionLabel =
     session?.label ||

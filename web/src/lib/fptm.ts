@@ -101,11 +101,28 @@ export interface FptmPillarState {
   tone?: FptmTone;
   /** Specific sub-item ids the coach called out */
   items: string[];
-  /** Optional free-text detail on this pillar */
+  /** Optional free-text detail on this pillar. Used for "strength" framing
+   *  and legacy payloads that pre-date the problem/resolution split. */
   note?: string | null;
+  /** "Here's the problem" — what the coach saw that needs work. Only
+   *  populated when tone === "weakness". Kept as a separate field from
+   *  `note` so older payloads with notes don't get mis-rendered as
+   *  problems when the coach re-opens them. */
+  problem?: string | null;
+  /** "Here's the resolution" — the prescription / fix. Same weakness-only
+   *  scope as `problem`. */
+  resolution?: string | null;
 }
 
-export type FptmValue = Partial<Record<FptmPillarId, FptmPillarState>>;
+/** Top-level coach framing for the whole diagnosis. Independent of the
+ *  per-pillar tones — those capture *which* aspects are strengths or
+ *  weaknesses, whereas this is the one-word headline for the topic or note
+ *  ("this review is about something the player did well / about something
+ *  that needs work"). Stored alongside pillar entries in the same JSONB
+ *  blob under a reserved key that can't collide with a pillar id. */
+export type FptmValue = Partial<Record<FptmPillarId, FptmPillarState>> & {
+  _overallTone?: FptmTone;
+};
 
 export function emptyFptm(): FptmValue {
   return {};
@@ -118,7 +135,13 @@ export function summarizeFptm(
   if (!value) return [];
   return FPTM_PILLARS.filter((p) => {
     const st = value[p.id];
-    return st?.on || (st?.items?.length ?? 0) > 0 || !!st?.note;
+    return (
+      st?.on ||
+      (st?.items?.length ?? 0) > 0 ||
+      !!st?.note ||
+      !!st?.problem ||
+      !!st?.resolution
+    );
   }).map((p) => ({
     pillar: p,
     itemCount: value[p.id]?.items?.length ?? 0,
