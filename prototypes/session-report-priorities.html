@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Session Report Prototype — Priorities-first</title>
+<style>
+  /* Mirror the app's look: system font, blue accent, tier palette. */
+  :root {
+    --blue: #1a73e8;
+    --blue-soft: #eef3ff;
+    --green: #1e7e34;
+    --green-soft: #e6f4ea;
+    --amber: #d97706;
+    --amber-soft: #fff3cd;
+    --red: #c62828;
+    --red-soft: #fdecea;
+    --teal: #0b6ea8;
+    --teal-soft: #e7f1fa;
+    --purple: #7c3aed;
+    --purple-soft: #f3edff;
+    --ink: #222;
+    --ink-2: #555;
+    --ink-3: #888;
+    --ink-4: #aaa;
+    --line: #e2e2e2;
+    --line-2: #eee;
+    --bg: #f7f7f8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 24px; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
+  .card.pad-lg { padding: 22px 26px; }
+  .stack > * + * { margin-top: 16px; }
+  .muted { color: var(--ink-3); font-size: 12px; }
+  .small { font-size: 12px; }
+  .label-eyebrow {
+    font-size: 11px; color: var(--blue); font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.6px;
+  }
+  .h1 { font-size: 24px; font-weight: 700; margin: 0; }
+  .h2 { font-size: 18px; font-weight: 700; margin: 0 0 10px; }
+  .h3 { font-size: 14px; font-weight: 700; color: #333; margin: 0 0 6px; }
+  /* tier pills + chips */
+  .pill {
+    display: inline-block; padding: 2px 8px; border-radius: 3px;
+    font-size: 10px; font-weight: 700; letter-spacing: 0.4px;
+    text-transform: uppercase;
+  }
+  .pill.needs-work { background: var(--red-soft); color: var(--red); }
+  .pill.ok        { background: var(--amber-soft); color: var(--amber); }
+  .pill.good      { background: var(--green-soft); color: var(--green); }
+  .pill.great     { background: var(--teal-soft); color: var(--teal); }
+  /* Source pills (AI / COACH) intentionally NOT exposed on the
+     player-facing report — every priority is presented as the coach's
+     recommendation. Whether the AI drafted the first version is an
+     internal detail; trust comes from coach approval, not provenance. */
+
+  /* HERO PRIORITIES BLOCK */
+  .priorities {
+    background: linear-gradient(180deg, #f7faff 0, #fff 60%);
+    border: 1px solid #dce6fa;
+    border-radius: 14px;
+    padding: 22px 26px 18px;
+  }
+  .priorities header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .priorities h2 { font-size: 20px; margin: 0; }
+  .priorities .tagline { color: var(--ink-3); font-size: 13px; }
+  .priorities .actions { margin-left: auto; display: inline-flex; gap: 6px; }
+  .btn {
+    padding: 5px 11px; font-size: 12px; font-weight: 600; border-radius: 6px;
+    border: 1px solid var(--blue); background: #fff; color: var(--blue); cursor: pointer;
+    font-family: inherit;
+  }
+  .btn.primary { background: var(--blue); color: #fff; }
+  .btn.ghost { border-color: var(--line); color: var(--ink-2); }
+
+  .priority-row {
+    display: grid; grid-template-columns: 56px 1fr auto;
+    gap: 14px; align-items: start;
+    padding: 14px 0;
+    border-top: 1px solid var(--line-2);
+  }
+  .priority-row:first-of-type { border-top: 0; }
+  .priority-row .rank {
+    display: grid; place-items: center;
+    width: 44px; height: 44px; border-radius: 50%;
+    background: var(--blue); color: #fff;
+    font-size: 18px; font-weight: 700;
+  }
+  .priority-row .rank.r2 { background: #1a73e8; opacity: 0.92; }
+  .priority-row .rank.r3 { background: #1a73e8; opacity: 0.84; }
+  .priority-row .rank.r4 { background: #1a73e8; opacity: 0.76; }
+  .priority-row .rank.r5 { background: #1a73e8; opacity: 0.68; }
+  .priority-row .body { min-width: 0; }
+  .priority-row .title { font-size: 16px; font-weight: 700; color: var(--ink); margin-bottom: 4px; }
+  .priority-row .meta-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; font-size: 11px; color: var(--ink-3); }
+  .priority-row .problem { font-size: 13px; line-height: 1.55; color: #333; margin-bottom: 8px; }
+  .priority-row .evidence {
+    display: flex; gap: 6px; flex-wrap: wrap;
+  }
+  .evidence .chip {
+    font-size: 11px; padding: 3px 8px; border-radius: 12px;
+    background: var(--line-2); color: var(--ink-2);
+    border: 1px solid var(--line);
+    cursor: pointer;
+  }
+  .evidence .chip:hover { background: #fff; border-color: var(--blue); color: var(--blue); }
+  .evidence .chip.stat-bad { background: var(--red-soft); color: var(--red); border-color: #f5c6cb; }
+  .evidence .chip.stat-good { background: var(--green-soft); color: var(--green); border-color: #c3e6cb; }
+  .priority-row .controls {
+    display: flex; flex-direction: column; gap: 6px;
+    align-items: flex-end;
+  }
+  .icon-btn {
+    width: 28px; height: 28px; border: 1px solid var(--line);
+    background: #fff; border-radius: 6px; cursor: pointer;
+    color: var(--ink-3); font-size: 12px; line-height: 1;
+  }
+  .icon-btn:hover { color: var(--blue); border-color: var(--blue); }
+  .priority-row .solution {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-left: 3px solid var(--green);
+    background: var(--green-soft);
+    border-radius: 4px;
+    font-size: 13px; color: #1a3d22; line-height: 1.5;
+  }
+  .priority-row .solution b { color: var(--green); }
+
+  /* KPI strip */
+  .kpi-strip {
+    display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px;
+  }
+  .kpi {
+    background: #fff; border: 1px solid var(--line); border-left: 3px solid var(--blue);
+    border-radius: 8px; padding: 10px 12px;
+  }
+  .kpi .lbl {
+    font-size: 9px; color: var(--ink-3); text-transform: uppercase;
+    letter-spacing: 0.5px; font-weight: 700;
+  }
+  .kpi .val { font-size: 18px; font-weight: 800; color: var(--ink); margin-top: 2px; }
+  .kpi .sub { font-size: 10px; color: var(--ink-3); margin-top: 2px; }
+  .kpi.tier-needs { border-left-color: var(--red); }
+  .kpi.tier-needs .val { color: var(--red); }
+  .kpi.tier-ok { border-left-color: var(--amber); }
+  .kpi.tier-ok .val { color: var(--amber); }
+  .kpi.tier-good { border-left-color: var(--green); }
+  .kpi.tier-good .val { color: var(--green); }
+  .kpi.tier-great { border-left-color: var(--teal); }
+  .kpi.tier-great .val { color: var(--teal); }
+
+  /* Skill ratings cards */
+  .skills { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
+  .skill {
+    border-radius: 8px; padding: 10px; text-align: center;
+    border-left: 3px solid; background: #fff;
+  }
+  .skill .lbl { font-size: 9px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.4px; font-weight: 700; }
+  .skill .val { font-size: 18px; font-weight: 700; }
+  .skill.s-overall { border-color: var(--blue); background: var(--blue-soft); }
+  .skill.s-serve   { border-color: #e8710a; background: #fff3e6; }
+  .skill.s-return  { border-color: #0d904f; background: #e7f5ec; }
+  .skill.s-offense { border-color: #d93025; background: #fce8e6; }
+  .skill.s-defense { border-color: #9334e6; background: #f3e9fc; }
+  .skill.s-agility { border-color: #00bcd4; background: #e3f6f9; }
+  .skill.s-cons    { border-color: #e91e90; background: #fce4f0; }
+  .skill .delta { font-size: 10px; color: var(--green); margin-top: 2px; font-weight: 600; }
+  .skill .delta.down { color: var(--red); }
+
+  /* Per-game strip */
+  .games-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .game-tile {
+    background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
+    text-decoration: none; color: var(--ink);
+  }
+  .game-tile .gnum { font-size: 11px; color: var(--ink-3); font-weight: 700; }
+  .game-tile .grating { font-size: 22px; font-weight: 800; color: var(--blue); margin-top: 2px; }
+  .game-tile .partners { font-size: 11px; color: var(--ink-3); font-style: italic; margin-top: 4px; }
+  .game-tile .wl {
+    display: inline-block; margin-top: 6px;
+    font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 3px;
+  }
+  .wl.win { background: var(--green-soft); color: var(--green); }
+  .wl.loss { background: var(--red-soft); color: var(--red); }
+
+  /* Stat detail cards */
+  .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .stat-card {
+    background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px;
+  }
+  .stat-card h3 { display: flex; align-items: center; gap: 8px; }
+  .stat-card .row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; }
+  .stat-card .row .name { width: 130px; color: var(--ink-2); }
+  .stat-card .row .bar  { flex: 1; height: 8px; background: var(--line-2); border-radius: 4px; position: relative; }
+  .stat-card .row .bar > span { display: block; height: 100%; border-radius: 4px; }
+  .stat-card .row .val { width: 64px; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  /* Themes (AI common themes — demoted) */
+  .theme-card {
+    background: #fff; border: 1px solid var(--line);
+    border-left: 3px solid var(--purple); border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .theme-card.edited { border-left-color: var(--blue); }
+  .theme-card .ttl { font-weight: 700; font-size: 13px; color: var(--ink); }
+  .theme-card .body { font-size: 12px; color: var(--ink-2); margin-top: 4px; line-height: 1.5; }
+
+  /* Coach notes per-game */
+  .note-quote {
+    border-left: 3px solid var(--blue); background: #f7f9ff;
+    padding: 10px 14px; border-radius: 4px;
+  }
+  .note-quote .label { font-size: 10px; font-weight: 700; color: var(--blue); letter-spacing: 0.4px; text-transform: uppercase; margin-bottom: 4px; }
+  .note-quote .text { font-size: 13px; color: var(--ink); line-height: 1.55; }
+
+  /* Layout helpers */
+  .hstack { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .vstack { display: flex; flex-direction: column; gap: 8px; }
+  .grow { flex: 1; }
+  details > summary { cursor: pointer; list-style: none; font-weight: 600; color: var(--ink-2); }
+  details > summary::-webkit-details-marker { display: none; }
+  details[open] > summary .chev { transform: rotate(90deg); }
+  .chev { display: inline-block; transition: transform 0.15s; margin-right: 4px; color: var(--ink-3); }
+
+  /* Print / PDF — keep colors, set letter page, tighten spacing,
+     and let each card live as its own page-break-friendly unit. */
+  @media print {
+    @page { size: letter; margin: 0.4in; }
+    html, body { background: #fff !important; }
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .wrap { padding: 0 !important; max-width: none !important; }
+    /* Per-row / per-card protection only. Don't make the whole
+       .priorities block atomic — at 5 rows it's taller than the
+       remaining page-1 space after the header, which forced Chrome
+       to push everything to page 2 with a big white gap. Allow
+       priorities to flow naturally; each .priority-row is still
+       protected so individual entries never split. */
+    .card, .priority-row, .stat-card, .theme-card,
+    .game-tile, .kpi, .skill, .note-quote {
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+    /* Coach-only chrome that shouldn't print to the player export. */
+    .priorities .actions,
+    .priority-row .controls { display: none !important; }
+  }
+
+  /* Mini progress arc for tone */
+  .tone-badge {
+    padding: 4px 12px; border-radius: 4px; font-weight: 700;
+    font-size: 11px; letter-spacing: 0.4px; text-transform: uppercase;
+  }
+  .tone-needs { background: var(--red-soft); color: var(--red); }
+  .tone-good  { background: var(--green-soft); color: var(--green); }
+</style>
+</head>
+<body>
+<div class="wrap stack">
+
+<!-- ───────────────────────────── HEADER ───────────────────────────── -->
+<div class="card pad-lg">
+  <div class="hstack">
+    <div style="width:64px;height:64px;border-radius:50%;background:#1a73e8;color:#fff;display:grid;place-items:center;font-size:26px;font-weight:700;border:2px solid #1a73e8;">S</div>
+    <div class="grow">
+      <div class="label-eyebrow">WMPC SESSION REPORT</div>
+      <h1 class="h1">Sample Player</h1>
+      <div class="muted small" style="margin-top:4px;">
+        Pro&nbsp;+3 Rating and Video Review · 4/19/2026 · 4 games
+        &nbsp;·&nbsp;<span style="color:#1a73e8;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">player@example.com</span>
+      </div>
+    </div>
+    <div class="vstack" style="align-items:flex-end;gap:6px;">
+      <span class="tone-badge tone-needs">Needs work</span>
+      <div style="font-size:11px;color:#888;">Coach's framing</div>
+    </div>
+    <div style="border-left:1px solid var(--line);padding-left:18px;">
+      <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:0.5px;">Overall</div>
+      <div style="font-size:42px;font-weight:800;color:#1a73e8;line-height:1;">4.08</div>
+      <div class="small" style="color:#1e7e34;font-weight:600;margin-top:2px;">▲ 0.05 vs last 6</div>
+    </div>
+  </div>
+</div>
+
+<!-- ───────────────────────── HERO: PRIORITIES ────────────────────────── -->
+<div class="priorities stack">
+  <header>
+    <h2>🎯 Top priorities to work on</h2>
+    <span class="tagline">In order — most impactful first. Drilled and prescribed by your coach.</span>
+    <!-- Coach-only controls (hidden from the player export). The
+         "Refresh suggestions" button regenerates draft priorities
+         from the latest stats + notes; pinned items survive. We
+         intentionally don't surface "AI" in the label — internally
+         it calls the model, but the player view is just "your
+         coach's recommendations." -->
+    <div class="actions">
+      <button class="btn ghost">↻ Re-rank</button>
+      <button class="btn">＋ Add</button>
+      <button class="btn primary">↻ Refresh suggestions</button>
+    </div>
+  </header>
+
+  <!-- PRIORITY 1 -->
+  <div class="priority-row">
+    <div class="rank">1</div>
+    <div class="body">
+      <div class="title">Get serves landing deeper</div>
+      <div class="meta-row">
+        <span class="pill needs-work">52% deep · needs work</span>
+        <span>•</span>
+        <span>showed up in 3 of 4 games</span>
+      </div>
+      <div class="problem">
+        Your serve depth has dropped to <b>52%</b> over these four games. When the
+        return team's getting it back at the kitchen line consistently, you lose
+        the serve-side advantage from the first ball. Most short serves landed
+        in the middle third — not faulting, just not pushing back.
+      </div>
+      <div class="evidence">
+        <span class="chip stat-bad">Serve deep · 52%</span>
+        <span class="chip stat-bad">Kitchen on serve · 41%</span>
+        <span class="chip">5 flagged moments →</span>
+        <span class="chip">3rd-shot drive trend ↑</span>
+      </div>
+      <div class="solution">
+        <b>Drill:</b> 25 serves with cones at 28&nbsp;ft. Target 70% deep
+        before next session; expect 2–3 weeks of focused practice to
+        lock in. Pair with <i>follow-through-to-kitchen</i> footwork —
+        they reinforce each other.
+      </div>
+    </div>
+    <div class="controls">
+      <button class="icon-btn" title="Move up">↑</button>
+      <button class="icon-btn" title="Move down">↓</button>
+      <button class="icon-btn" title="Edit">✎</button>
+      <button class="icon-btn" title="Pin (won't be replaced on regenerate)">📌</button>
+    </div>
+  </div>
+
+  <!-- PRIORITY 2 -->
+  <div class="priority-row">
+    <div class="rank r2">2</div>
+    <div class="body">
+      <div class="title">Close to the kitchen on the serve</div>
+      <div class="meta-row">
+        <span class="pill needs-work">41% kitchen on serve · needs work</span>
+        <span>•</span>
+        <span>across all 4 games</span>
+      </div>
+      <div class="problem">
+        After the third shot you're sitting back at 6–7 ft instead of stepping
+        in. The opponent's 4th shot is finding open court because of it. This
+        compounds with the serve-depth issue (#1) — short serve + slow close =
+        easy attack on the 4th.
+      </div>
+      <div class="evidence">
+        <span class="chip stat-bad">Kitchen on serve · 41%</span>
+        <span class="chip">Player position y=12.0 · target 14.5+</span>
+        <span class="chip">2 review notes →</span>
+      </div>
+      <div class="solution">
+        <b>Drill:</b> "split-step at the kick" — every time you serve, the
+        moment your paddle releases the ball, take a hop forward. Run it
+        until it's automatic.
+      </div>
+    </div>
+    <div class="controls">
+      <button class="icon-btn" title="Move up">↑</button>
+      <button class="icon-btn" title="Move down">↓</button>
+      <button class="icon-btn" title="Edit">✎</button>
+      <button class="icon-btn" title="Pin">📌</button>
+    </div>
+  </div>
+
+  <!-- PRIORITY 3 -->
+  <div class="priority-row">
+    <div class="rank r3">3</div>
+    <div class="body">
+      <div class="title">Choose drop over drive on the 3rd</div>
+      <div class="meta-row">
+        <span class="pill ok">3rd in · 81%</span>
+        <span>•</span>
+        <span>games 2 + 3 specifically</span>
+      </div>
+      <div class="problem">
+        You drove 9 of 14 third shots in these games — 4 of those got you
+        attacked on the 5th. Drives only work when your team is actually closing
+        up; right now (see #2) that's not happening, so the drop is the safer
+        ball.
+      </div>
+      <div class="evidence">
+        <span class="chip">3rd drive: 9 · 3rd drop: 5</span>
+        <span class="chip">5th-shot reset rate: 35%</span>
+        <span class="chip">2 sequences →</span>
+      </div>
+      <div class="solution">
+        <b>Drill:</b> coach-fed returns; alternate "drive 5, drop 5, drop 5,
+        drive 1" to retrain the default response. Goal: make drop the
+        unconscious choice when you're out of position.
+      </div>
+    </div>
+    <div class="controls">
+      <button class="icon-btn" title="Move up">↑</button>
+      <button class="icon-btn" title="Move down">↓</button>
+      <button class="icon-btn" title="Edit">✎</button>
+      <button class="icon-btn" title="Pin">📌</button>
+    </div>
+  </div>
+
+  <!-- PRIORITY 4 -->
+  <div class="priority-row">
+    <div class="rank r4">4</div>
+    <div class="body">
+      <div class="title">Stay patient in the dink rally</div>
+      <div class="meta-row">
+        <span class="pill ok">Shot-in 81%</span>
+        <span>•</span>
+        <span>2 of 4 games</span>
+      </div>
+      <div class="problem">
+        Three rallies ended on a low-margin speed-up that didn't land. The
+        previous shot was actually a great dink — patience would have earned
+        you a better pop-up to attack.
+      </div>
+      <div class="evidence">
+        <span class="chip">Speed-up loss rate: 60%</span>
+        <span class="chip">3 flagged →</span>
+      </div>
+      <div class="solution">
+        <b>Drill:</b> "no speed-up under shoulder" — drill 3-minute dink rallies
+        where you can only attack a ball above shoulder height. Builds the
+        patience habit.
+      </div>
+    </div>
+    <div class="controls">
+      <button class="icon-btn" title="Move up">↑</button>
+      <button class="icon-btn" title="Move down">↓</button>
+      <button class="icon-btn" title="Edit">✎</button>
+      <button class="icon-btn" title="Pin">📌</button>
+    </div>
+  </div>
+
+  <!-- PRIORITY 5 -->
+  <div class="priority-row">
+    <div class="rank r5">5</div>
+    <div class="body">
+      <div class="title">Reset against direct attacks</div>
+      <div class="meta-row">
+        <span class="pill ok">Direct defense · 67%</span>
+        <span>•</span>
+        <span>game 4</span>
+      </div>
+      <div class="problem">
+        When attacked at your sideline / body, you're countering hard ~70% of
+        the time. Resets back into the kitchen reset the rally and force them
+        to start again. Good ones too — but you only chose reset twice across
+        these games.
+      </div>
+      <div class="evidence">
+        <span class="chip">Direct defense beats: 4/12</span>
+        <span class="chip">Reset count avg: 0.5/game</span>
+      </div>
+      <div class="solution">
+        <b>Drill:</b> coach feeds 8 mph body shots; goal: paddle out front,
+        soft hands, ball lands kitchen-side of the line. 50 reps a session
+        for two weeks.
+      </div>
+    </div>
+    <div class="controls">
+      <button class="icon-btn" title="Move up">↑</button>
+      <button class="icon-btn" title="Move down">↓</button>
+      <button class="icon-btn" title="Edit">✎</button>
+      <button class="icon-btn" title="Pin">📌</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─────────────────────── HIGH-LEVEL STATS ROW ─────────────────────── -->
+<div class="card pad-lg stack">
+  <div class="hstack" style="margin-bottom:6px;">
+    <h2 class="h2" style="margin:0;">Session at a glance</h2>
+    <span class="muted small grow">Averaged across 4 games</span>
+    <div class="hstack small" style="gap:6px;color:#666;">
+      <span class="pill needs-work">Needs work &lt;60%</span>
+      <span class="pill ok">OK 60–70%</span>
+      <span class="pill good">Good 71–89%</span>
+      <span class="pill great">Great 90–100%</span>
+    </div>
+  </div>
+
+  <div class="kpi-strip">
+    <div class="kpi tier-good">
+      <div class="lbl">Shots in</div>
+      <div class="val">81%</div>
+      <div class="sub">good</div>
+    </div>
+    <div class="kpi tier-good">
+      <div class="lbl">Serves in</div>
+      <div class="val">87%</div>
+      <div class="sub">good</div>
+    </div>
+    <div class="kpi tier-needs">
+      <div class="lbl">Serve deep</div>
+      <div class="val">52%</div>
+      <div class="sub">needs work · ↓ priority 1</div>
+    </div>
+    <div class="kpi tier-good">
+      <div class="lbl">Returns in</div>
+      <div class="val">81%</div>
+      <div class="sub">good</div>
+    </div>
+    <div class="kpi tier-needs">
+      <div class="lbl">Return deep</div>
+      <div class="val">46%</div>
+      <div class="sub">needs work</div>
+    </div>
+    <div class="kpi tier-needs">
+      <div class="lbl">Kitch on serve</div>
+      <div class="val">41%</div>
+      <div class="sub">needs work · ↓ priority 2</div>
+    </div>
+  </div>
+
+  <div class="skills">
+    <div class="skill s-overall"><div class="lbl">Overall</div><div class="val">4.08</div><div class="delta">▲ 0.05</div></div>
+    <div class="skill s-serve"><div class="lbl">Serve</div><div class="val">3.91</div><div class="delta down">▼ 0.12</div></div>
+    <div class="skill s-return"><div class="lbl">Return</div><div class="val">4.32</div><div class="delta">▲ 0.08</div></div>
+    <div class="skill s-offense"><div class="lbl">Offense</div><div class="val">4.34</div><div class="delta">▲ 0.16</div></div>
+    <div class="skill s-defense"><div class="lbl">Defense</div><div class="val">3.85</div><div class="delta down">▼ 0.04</div></div>
+    <div class="skill s-agility"><div class="lbl">Agility</div><div class="val">4.13</div><div class="delta">▲ 0.02</div></div>
+    <div class="skill s-cons"><div class="lbl">Cons.</div><div class="val">3.91</div><div class="delta down">▼ 0.06</div></div>
+  </div>
+</div>
+
+<!-- ───────────────────────── PER-GAME STRIP ─────────────────────────── -->
+<div class="card pad-lg stack">
+  <div class="hstack" style="justify-content:space-between;">
+    <h2 class="h2" style="margin:0;">Games in this session</h2>
+    <span class="muted small">Click into any game's full report</span>
+  </div>
+  <div class="games-strip">
+    <a class="game-tile" href="#">
+      <div class="gnum">GAME 01 · 4/19</div>
+      <div class="grating">4.26</div>
+      <div class="partners">with Alex · vs Jordan &amp; Riley</div>
+      <span class="wl win">W 11–8</span>
+    </a>
+    <a class="game-tile" href="#">
+      <div class="gnum">GAME 02 · 4/19</div>
+      <div class="grating">4.08</div>
+      <div class="partners">with Alex · vs Jordan &amp; Riley</div>
+      <span class="wl loss">L 7–11</span>
+    </a>
+    <a class="game-tile" href="#">
+      <div class="gnum">GAME 03 · 4/19</div>
+      <div class="grating">3.99</div>
+      <div class="partners">with Riley · vs Alex &amp; Jordan</div>
+      <span class="wl win">W 11–9</span>
+    </a>
+    <a class="game-tile" href="#">
+      <div class="gnum">GAME 04 · 4/19</div>
+      <div class="grating">4.08</div>
+      <div class="partners">with Jordan · vs Alex &amp; Riley</div>
+      <span class="wl loss">L 8–11</span>
+    </a>
+  </div>
+</div>
+
+<!-- ───────────────────────── COACH'S NOTES ──────────────────────────── -->
+<div class="card pad-lg stack">
+  <h2 class="h2">Coach's notes</h2>
+  <div class="vstack" style="gap:10px;">
+    <div class="note-quote">
+      <div class="label">Game 01</div>
+      <div class="text">Best version of you tonight. Patient when it mattered, took good drives off the bounce, kitchen pressure was real. Keep this energy.</div>
+    </div>
+    <div class="note-quote">
+      <div class="label">Game 02</div>
+      <div class="text">Started impatient. Two unforced speed-ups in the first three rallies set the tone. Need a reset routine between rallies.</div>
+    </div>
+    <div class="note-quote">
+      <div class="label">Game 03</div>
+      <div class="text">Solid recovery. The drop on rally 7 was textbook — that's the play.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ───────────────────── DRILL-DOWN STATS (collapsed) ───────────────── -->
+<details class="card pad-lg" open>
+  <summary class="h2"><span class="chev">▶</span>Drill-down stats</summary>
+  <div class="stats-grid" style="margin-top:14px;">
+
+    <div class="stat-card">
+      <h3>🚀 Serve depth distribution</h3>
+      <div class="muted small" style="margin-bottom:6px;">Where your serves land · 4 games combined</div>
+      <div class="row"><div class="name">Out / Net</div><div class="bar"><span style="width:13%;background:var(--red);"></span></div><div class="val">13%</div></div>
+      <div class="row"><div class="name">Shallow</div><div class="bar"><span style="width:11%;background:var(--amber);"></span></div><div class="val">11%</div></div>
+      <div class="row"><div class="name">Medium</div><div class="bar"><span style="width:24%;background:#bdbdbd;"></span></div><div class="val">24%</div></div>
+      <div class="row"><div class="name">Deep ✓</div><div class="bar"><span style="width:52%;background:var(--green);"></span></div><div class="val">52%</div></div>
+    </div>
+
+    <div class="stat-card">
+      <h3>🏠 Kitchen arrival</h3>
+      <div class="muted small" style="margin-bottom:6px;">Did you get to the kitchen line in time</div>
+      <div class="row"><div class="name">On serve (you)</div><div class="bar"><span style="width:41%;background:var(--red);"></span></div><div class="val">41%</div></div>
+      <div class="row"><div class="name">On serve (partner)</div><div class="bar"><span style="width:64%;background:var(--amber);"></span></div><div class="val">64%</div></div>
+      <div class="row"><div class="name">On return (you)</div><div class="bar"><span style="width:88%;background:var(--green);"></span></div><div class="val">88%</div></div>
+      <div class="row"><div class="name">On return (partner)</div><div class="bar"><span style="width:91%;background:var(--teal);"></span></div><div class="val">91%</div></div>
+    </div>
+
+    <div class="stat-card">
+      <h3>🎯 3rd shot tendencies</h3>
+      <div class="muted small" style="margin-bottom:6px;">Shot type chosen on the 3rd, and the outcome</div>
+      <div class="row"><div class="name">Drive · won</div><div class="bar"><span style="width:36%;background:var(--green);"></span></div><div class="val">5/14</div></div>
+      <div class="row"><div class="name">Drive · lost</div><div class="bar"><span style="width:64%;background:var(--red);"></span></div><div class="val">9/14</div></div>
+      <div class="row"><div class="name">Drop · won</div><div class="bar"><span style="width:80%;background:var(--green);"></span></div><div class="val">4/5</div></div>
+      <div class="row"><div class="name">Drop · lost</div><div class="bar"><span style="width:20%;background:var(--red);"></span></div><div class="val">1/5</div></div>
+    </div>
+
+    <div class="stat-card">
+      <h3>🎨 Play style mix</h3>
+      <div class="muted small" style="margin-bottom:6px;">What shots you choose when you have options</div>
+      <div class="row"><div class="name">Drive (offense)</div><div class="bar"><span style="width:51%;background:#5e35b1;"></span></div><div class="val">51%</div></div>
+      <div class="row"><div class="name">Drop</div><div class="bar"><span style="width:29%;background:#29b6f6;"></span></div><div class="val">29%</div></div>
+      <div class="row"><div class="name">Dink</div><div class="bar"><span style="width:19%;background:#4caf50;"></span></div><div class="val">19%</div></div>
+      <div class="row"><div class="name">Reset</div><div class="bar"><span style="width:1%;background:#f57c00;"></span></div><div class="val">1%</div></div>
+    </div>
+  </div>
+</details>
+
+<!-- ─────────────────── COMMON THEMES (AI raw, demoted) ──────────────── -->
+<div class="card pad-lg stack">
+  <div class="hstack">
+    <h2 class="h2" style="margin:0;">Recurring themes</h2>
+    <span class="muted small grow">Patterns the coach is watching across the session — separate from this session's top priorities.</span>
+  </div>
+  <div class="vstack" style="gap:8px;">
+    <div class="theme-card">
+      <div class="ttl">Paddle face dropping early on returns</div>
+      <div class="body"><b style="color:var(--red);">Problem:</b> 7 of 14 returns went into the net — paddle face was below the ball at contact in 5 of those. <b style="color:var(--green);">Solution:</b> ball-on-string drill at the wall; keep paddle face up through contact for 50 reps.</div>
+    </div>
+    <div class="theme-card">
+      <div class="ttl">Late split-step on serve return</div>
+      <div class="body"><b style="color:var(--red);">Problem:</b> you wait for the bounce before splitting. Costs you a step toward kitchen. <b style="color:var(--green);">Solution:</b> split with the opponent's contact, not the bounce.</div>
+    </div>
+    <div class="theme-card">
+      <div class="ttl">Shot-target communication with partner</div>
+      <div class="body"><b style="color:var(--red);">Problem:</b> 3 rallies in game 2 ended with both players hesitating on the same ball. <b style="color:var(--green);">Solution:</b> verbal "mine" / "yours" call before every middle ball.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ───────────────────────────── FOOTER ─────────────────────────────── -->
+<div style="text-align:center;color:var(--ink-3);font-size:11px;padding:8px 0 24px;">
+  Prototype · static mock · session report priorities-first ·
+  <a href="#" style="color:var(--ink-3);">view full PDF</a>
+</div>
+
+</div>
+</body>
+</html>
