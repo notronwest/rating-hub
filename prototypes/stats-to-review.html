@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Stats to Review — prototype</title>
+  <style>
+    :root {
+      --ink: #333;
+      --muted: #666;
+      --faint: #999;
+      --bg: #f7f7f8;
+      --line: #e2e2e2;
+      --line-soft: #f0f0f0;
+      --blue: #1a73e8;
+      --blue-bg: #e8f0fe;
+      --green: #1e7e34;
+      --green-soft: #e6f4ea;
+      --amber: #d97706;
+      --amber-soft: #fff3cd;
+      --red: #c62828;
+      --red-soft: #fdecea;
+      --gr8-blue: #0b6ea8;
+      --gr8-blue-soft: #e7f1fa;
+      --team0: #1a73e8;
+      --team1: #f59e0b;
+      --purple: #7c3aed;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink);
+      font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    body { padding: 24px 32px 80px; }
+    .wrap { max-width: 1200px; margin: 0 auto; }
+
+    h1 { font-size: 18px; margin: 0 0 4px; font-weight: 600; }
+    h2 { font-size: 11px; margin: 28px 0 8px; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.8px; }
+    .lead { color: var(--muted); margin: 0 0 20px; font-size: 13px; }
+
+    .panel {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+      margin-bottom: 14px;
+    }
+
+    /* ─────── Game Stats block (matches TeamStatsBlock React component) ─────── */
+    .gs-block { padding: 16px; }
+    .gs-block h3 { margin: 0 0 14px; font-size: 14px; font-weight: 600; }
+    .sub-h {
+      font-size: 11px; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.6px; margin: 0 0 8px;
+    }
+    .group + .group { margin-top: 14px; }
+
+    .av {
+      width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
+      display: grid; place-items: center; color: #fff; font-size: 10px; font-weight: 700;
+    }
+    .av.t0 { background: var(--team0); }
+    .av.t1 { background: var(--team1); }
+
+    /* Reviewable row — name | bar (0–100% scale) | action */
+    .row {
+      display: grid;
+      grid-template-columns: 120px 1fr 110px;
+      gap: 10px; align-items: center;
+      padding: 5px 0;
+    }
+    .row .nm {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 13px; font-weight: 600; min-width: 0;
+    }
+    .row .nm .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .row .track {
+      position: relative; height: 22px; background: #f1f3f5; border-radius: 4px; overflow: hidden;
+    }
+    .row .track::after {
+      content: ""; position: absolute; left: 50%; top: 2px; bottom: 2px; width: 1px;
+      background: rgba(0,0,0,0.08);
+    }
+    .row .fill {
+      position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px;
+      display: flex; align-items: center; justify-content: flex-end;
+      padding: 0 8px; font-size: 11px; font-weight: 700; gap: 4px;
+    }
+    .row .fill .denom {
+      font-weight: 500; font-size: 10px; opacity: 0.85;
+    }
+    .row .action { display: flex; justify-content: flex-end; }
+
+    /* 4-tier palette — must match playerRatingReport.classifyPct */
+    .tier-needs   { background: var(--red); color: #fff; }
+    .tier-ok      { background: var(--amber); color: #5b4400; }
+    .tier-good    { background: var(--green); color: #fff; }
+    .tier-great   { background: var(--gr8-blue); color: #fff; }
+
+    .add {
+      flex-shrink: 0;
+      padding: 4px 9px; font-size: 11px; font-weight: 600;
+      background: #fff; color: var(--blue);
+      border: 1px dashed #c6dafc; border-radius: 4px;
+      cursor: pointer; font-family: inherit; white-space: nowrap;
+    }
+    .add:hover { background: var(--blue-bg); border-style: solid; }
+    .add.added {
+      color: var(--green); border-color: #b7e1c4; background: var(--green-soft);
+      border-style: solid;
+    }
+
+    /* ─────── Review page — Stats to Review section ─────── */
+    .review-header {
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px 14px; font-size: 13px; font-weight: 700;
+      background: #fafafa; border-bottom: 1px solid #eee;
+    }
+    .review-header .sub { font-weight: 400; color: var(--muted); font-size: 12px; }
+    .review-header .right { margin-left: auto; font-size: 11px; color: var(--muted); font-weight: 500; }
+
+    /* Topic row (collapsed/open) */
+    .topic-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 14px; cursor: pointer;
+      border-bottom: 1px solid #eee;
+      background: #fff;
+    }
+    .topic-row.open { background: #f0f6ff; border-bottom: 1px solid #d1e2ff; }
+    .topic-row:last-child { border-bottom: none; }
+    .topic-row .play {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: var(--blue-bg); color: var(--blue);
+      display: grid; place-items: center; font-size: 12px; flex-shrink: 0;
+    }
+    .topic-row .icon { font-size: 18px; flex-shrink: 0; }
+    .topic-row .meta { flex: 1; min-width: 0; }
+    .topic-row .meta .t1 { font-weight: 700; font-size: 14px; }
+    .topic-row .meta .t1 .who { color: var(--muted); font-weight: 500; }
+    .topic-row .meta .t2 { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .topic-row .pct {
+      font-size: 13px; font-weight: 700; margin-right: 6px;
+      font-variant-numeric: tabular-nums;
+    }
+    .topic-row .pct .denom { color: var(--muted); font-weight: 500; font-size: 11px; }
+    .topic-row .pill {
+      padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 700;
+      letter-spacing: 0.4px; flex-shrink: 0;
+    }
+    .pill-needs { background: var(--amber-soft); color: var(--amber); }
+    .pill-ok    { background: var(--green-soft); color: var(--green); }
+    .topic-row .remove {
+      margin-left: 6px; padding: 4px 8px; font-size: 10px; color: var(--muted);
+      background: transparent; border: 1px solid var(--line); border-radius: 4px;
+      cursor: pointer; font-family: inherit;
+    }
+    .topic-row .remove:hover { color: var(--red); border-color: #f4c5c0; }
+    .topic-row .chev { color: var(--faint); font-size: 12px; flex-shrink: 0; margin-left: 4px; }
+
+    /* Topic body — mirrors WmpcAnalysisPanel exactly */
+    .topic-body {
+      padding: 16px;
+      background: #fff;
+      border-bottom: 1px solid #eee;
+      display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px;
+    }
+    .video-pl {
+      height: 320px; background: #1a1a1a; border-radius: 8px;
+      display: grid; place-items: center; color: #6a7280;
+      font-size: 12px; padding: 16px; text-align: center;
+    }
+    .panel-side > * { margin-bottom: 12px; }
+    .small-h {
+      font-size: 11px; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 6px;
+    }
+    .small-h .ann { text-transform: none; letter-spacing: 0; color: var(--faint); font-weight: 400; margin-left: 6px; }
+
+    .fptm-card {
+      border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+      display: flex; align-items: center; gap: 10px; margin-bottom: 6px;
+      border-left: 3px solid var(--line);
+    }
+    .fptm-card .check { width: 14px; height: 14px; border: 1.5px solid #bbb; border-radius: 3px; flex-shrink: 0; }
+    .fptm-card .badge {
+      width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+      color: #fff; font-size: 11px; font-weight: 700; flex-shrink: 0;
+    }
+    .fptm-card .lbl { flex: 1; }
+    .fptm-card .lbl b { font-size: 13px; }
+    .fptm-card .lbl .d { font-size: 11px; color: var(--muted); }
+    .fptm-card .more { color: var(--faint); font-size: 11px; }
+    .fptm-card.f { border-left-color: var(--blue); }
+    .fptm-card.f .badge { background: var(--blue); }
+    .fptm-card.p { border-left-color: var(--amber); }
+    .fptm-card.p .badge { background: var(--amber); }
+    .fptm-card.t { border-left-color: var(--green); }
+    .fptm-card.t .badge { background: var(--green); }
+    .fptm-card.m { border-left-color: var(--purple); }
+    .fptm-card.m .badge { background: var(--purple); }
+
+    textarea, .ta {
+      width: 100%; border: 1px solid var(--line); border-radius: 6px;
+      padding: 8px; font-family: inherit; font-size: 13px;
+      min-height: 60px; resize: vertical; background: #fff; color: var(--ink);
+    }
+    .ta.ph { color: var(--faint); }
+
+    /* Instance timeline strip */
+    .timeline-wrap { grid-column: 1 / -1; padding-top: 4px; }
+    .timeline-head {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 4px;
+      font-size: 11px; color: var(--muted);
+    }
+    .timeline-head b { color: var(--ink); }
+    .filter-grp {
+      margin-left: auto; display: inline-flex;
+      border: 1px solid var(--line); border-radius: 5px; overflow: hidden;
+    }
+    .filter-grp button {
+      padding: 3px 10px; font-size: 10px; font-weight: 700;
+      letter-spacing: 0.3px; background: #fff; color: var(--muted);
+      border: none; border-right: 1px solid var(--line); cursor: pointer;
+      font-family: inherit; text-transform: capitalize;
+    }
+    .filter-grp button:last-child { border-right: none; }
+    .filter-grp button.active { background: var(--blue); color: #fff; }
+
+    .strip {
+      display: flex; gap: 4px; padding: 8px;
+      background: #fff; border: 1px solid var(--line); border-radius: 6px;
+      overflow-x: auto;
+    }
+    .tile {
+      display: inline-flex; flex-direction: column; align-items: center; gap: 2px;
+      padding: 5px 6px; min-width: 42px; border-radius: 4px; cursor: pointer;
+      border: 1px solid transparent; background: transparent;
+    }
+    .tile.current { background: var(--blue-bg); border-color: var(--blue); }
+    .tile .dot {
+      width: 18px; height: 18px; border-radius: 50%;
+      display: grid; place-items: center;
+      color: #fff; font-size: 11px; font-weight: 700;
+    }
+    .tile.pass .dot { background: var(--green); }
+    .tile.fail .dot { background: var(--red); }
+    .tile .lbl {
+      font-size: 10px; font-weight: 700; font-variant-numeric: tabular-nums; color: #444;
+    }
+    .tile.current .lbl { color: var(--blue); }
+
+    .compare-hint {
+      grid-column: 1 / -1;
+      padding: 8px 10px;
+      background: var(--amber-soft); border: 1px solid #f3e2a0; border-radius: 6px;
+      font-size: 12px; color: #6b5500;
+      margin-top: 8px;
+    }
+
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chip {
+      padding: 3px 9px; font-size: 11px; border: 1px solid var(--line);
+      border-radius: 999px; color: var(--muted); background: #fff;
+    }
+
+    .faux {
+      padding: 24px; background: #fafafa; border: 1px dashed var(--line);
+      border-radius: 10px; color: var(--faint); font-size: 12px; text-align: center;
+      margin-bottom: 14px;
+    }
+
+    .pretend-section-divider {
+      margin: 32px 0 12px;
+      padding: 10px 14px;
+      border-left: 3px solid var(--blue);
+      background: #fff; border-radius: 4px;
+      color: var(--muted); font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Stats to Review — prototype</h1>
+  <p class="lead">
+    Coach hovers a per-player stat on Game Stats and clicks "+ Add to review". The stat then appears as its own topic on the Review page (between WMPC Analysis and the Review Queue) using the same shell as a 3rd-Shot-Drop topic — FPTM diagnosis, drills, overall note, and a per-rally instance strip.
+  </p>
+
+  <!-- ───── Mock 1: Game Stats — same Option-2 mirrored layout shipped in TeamStatsBlock ───── -->
+  <h2>1 · Game Stats view · per-row "+ Add to review" (coach-only)</h2>
+  <div class="panel">
+    <div class="gs-block">
+      <h3>Kitchen Arrival</h3>
+      <div class="group">
+        <div class="sub-h">When on Serving Team</div>
+        <div class="row">
+          <div class="nm"><span class="av t0">JN</span><span class="who">Jelena</span></div>
+          <div class="track"><div class="fill tier-good" style="width: 85%">85% <span class="denom">11/13</span></div></div>
+          <div class="action"><button class="add">+ Add to review</button></div>
+        </div>
+        <div class="row">
+          <div class="nm"><span class="av t0">GW</span><span class="who">Geoff</span></div>
+          <div class="track"><div class="fill tier-good" style="width: 77%">77% <span class="denom">10/13</span></div></div>
+          <div class="action"><button class="add">+ Add to review</button></div>
+        </div>
+        <div class="row">
+          <div class="nm"><span class="av t1">CG</span><span class="who">Celeste</span></div>
+          <div class="track"><div class="fill tier-needs" style="width: 47%">47% <span class="denom">8/17</span></div></div>
+          <div class="action"><button class="add added">✓ Added</button></div>
+        </div>
+        <div class="row">
+          <div class="nm"><span class="av t1">RW</span><span class="who">Ron</span></div>
+          <div class="track"><div class="fill tier-good" style="width: 77%">77% <span class="denom">13/17</span></div></div>
+          <div class="action"><button class="add">+ Add to review</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="lead" style="font-size: 12px; margin-top: -8px">
+    Celeste's Serving-side row already has "✓ Added" — clicking it again removes it. The pill colors mirror playerRatingReport.classifyPct (Needs work / OK / Good / Great).
+  </p>
+
+  <!-- ───── Mock 2: Coach Review page — new "Stats to Review" section ───── -->
+  <h2>2 · Coach Review page · new section between WMPC and Review Queue</h2>
+
+  <div class="faux">📊 WMPC Analysis (existing, 6 topics) — unchanged</div>
+
+  <div class="panel">
+    <div class="review-header">
+      <span>📐 Stats to Review</span>
+      <span class="sub">Per-stat rally instances pulled from Game Stats.</span>
+      <span class="right">1 of 2 needs recommendation</span>
+    </div>
+
+    <!-- Collapsed entry -->
+    <div class="topic-row">
+      <div class="play">▶</div>
+      <div class="icon">🥒</div>
+      <div class="meta">
+        <div class="t1">Kitchen Arrival <span class="who">· When on Returning Team</span></div>
+        <div class="t2">PB Vision metric · did Celeste close to the kitchen on rallies the team returned</div>
+      </div>
+      <div class="pct" style="color: var(--green)">12<span class="denom">/13</span></div>
+      <div class="pill pill-ok">ADDRESSED</div>
+      <button class="remove" title="Remove from Stat Review">Remove</button>
+      <span class="chev">▼</span>
+    </div>
+
+    <!-- Expanded entry — mirrors the 3rd-shot-drop topic shell -->
+    <div class="topic-row open">
+      <div class="play">▶</div>
+      <div class="icon">🥒</div>
+      <div class="meta">
+        <div class="t1">Kitchen Arrival <span class="who">· When on Serving Team</span></div>
+        <div class="t2">PB Vision metric · did Celeste close to the kitchen on rallies the team served</div>
+      </div>
+      <div class="pct" style="color: var(--red)">8<span class="denom">/17</span></div>
+      <div class="pill pill-needs">NEEDS RECOMMENDATION</div>
+      <button class="remove" title="Remove from Stat Review">Remove</button>
+      <span class="chev">▲</span>
+    </div>
+
+    <div class="topic-body">
+      <!-- Left column: video + instance strip -->
+      <div>
+        <div class="video-pl">No Mux playback ID yet — paste one from the Analyze page to enable clips.</div>
+
+        <div class="timeline-wrap">
+          <div class="timeline-head">
+            <b>Instances</b>
+            <span>17 total · <span style="color: var(--red)">9 fails</span> · <span style="color: var(--green)">8 passes</span></span>
+            <div class="filter-grp">
+              <button class="active">All</button>
+              <button>Passes</button>
+              <button>Fails</button>
+            </div>
+          </div>
+
+          <div class="strip">
+            <!-- Real Celeste data:
+                 Fails (9): R1, R4, R10, R16, R19, R20, R29, R40, R42
+                 Passes (8): R2, R3, R11, R14, R15, R21, R27, R38 -->
+            <button class="tile fail">           <div class="dot">✗</div><div class="lbl">R1</div></button>
+            <button class="tile pass">           <div class="dot">✓</div><div class="lbl">R2</div></button>
+            <button class="tile pass">           <div class="dot">✓</div><div class="lbl">R3</div></button>
+            <button class="tile fail">           <div class="dot">✗</div><div class="lbl">R4</div></button>
+            <button class="tile fail">           <div class="dot">✗</div><div class="lbl">R10</div></button>
+            <button class="tile pass current">   <div class="dot">✓</div><div class="lbl">R11</div></button>
+            <button class="tile pass">           <div class="dot">✓</div><div class="lbl">R14</div></button>
+            <button class="tile pass">           <div class="dot">✓</div><div class="lbl">R15</div></button>
+            <button class="tile fail">           <div class="dot">✗</div><div class="lbl">R16</div></button>
+            <button class="tile fail">           <div class="dot">✗</div><div class="lbl">R19</div></button>
+            <button class="tile fail">           <div class="dot">✗</div><div class="lbl">R20</div></button>
+            <button class="tile pass">           <div class="dot">✓</div><div class="lbl">R21</div></button>
+            <button class="tile pass">           <div class="dot">✓</div><div class="lbl">R27</div></button>
+            <button class="tile fail">           <div class="dot">✗</div><div class="lbl">R29</div></button>
+            <button class="tile pass">           <div class="dot">✓</div><div class="lbl">R38</div></button>
+            <button class="tile fail">           <div class="dot">✗</div><div class="lbl">R40</div></button>
+            <button class="tile fail">           <div class="dot">✗</div><div class="lbl">R42</div></button>
+          </div>
+
+          <div class="compare-hint">
+            💡 <b>Compare passes to fails</b> — what's happening on the good ones that isn't on the bad?
+          </div>
+        </div>
+      </div>
+
+      <!-- Right column: FPTM + drills + overall note + tags -->
+      <div class="panel-side">
+        <div>
+          <div class="small-h">FPTM Diagnosis <span class="ann">· applies to the whole stat</span></div>
+          <div class="fptm-card f">
+            <div class="check"></div><div class="badge">F</div>
+            <div class="lbl"><b>Footwork</b><div class="d">Movement, balance, court positioning</div></div>
+            <div class="more">▼</div>
+          </div>
+          <div class="fptm-card p">
+            <div class="check"></div><div class="badge">P</div>
+            <div class="lbl"><b>Paddle</b><div class="d">Paddle control, contact, shot execution</div></div>
+            <div class="more">▼</div>
+          </div>
+          <div class="fptm-card t">
+            <div class="check"></div><div class="badge">T</div>
+            <div class="lbl"><b>Tactics</b><div class="d">Shot choice, patterns, court awareness</div></div>
+            <div class="more">▼</div>
+          </div>
+          <div class="fptm-card m">
+            <div class="check"></div><div class="badge">M</div>
+            <div class="lbl"><b>Mindset</b><div class="d">Composure, tempo, competitive discipline</div></div>
+            <div class="more">▼</div>
+          </div>
+        </div>
+
+        <div>
+          <div class="small-h" style="color: var(--green)">Drills to Resolve</div>
+          <div class="ta ph">Drills, reps, or cues to address the FPTM issues above…</div>
+        </div>
+
+        <div>
+          <div class="small-h">Overall Note <span class="ann">· applies to all 17 attempts</span></div>
+          <div class="ta ph">Coaching takeaway for this stat. What do successful arrivals do that the missed ones don't?</div>
+        </div>
+
+        <div>
+          <div class="small-h">Tags</div>
+          <div class="chips">
+            <span class="chip">positioning</span>
+            <span class="chip">third-shot</span>
+            <span class="chip">reset</span>
+            <span class="chip">dink battle</span>
+            <span class="chip">transition</span>
+            <span class="chip">mindset</span>
+            <span class="chip">stacking</span>
+            <span class="chip">serve depth</span>
+          </div>
+          <div style="font-size: 10px; color: var(--faint); margin-top: 6px">Tags are global across games &amp; players.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="faux">📋 Review Queue (existing) — flags · sequences · rally losses · unchanged</div>
+
+  <p class="lead" style="margin-top: 28px; padding: 14px; background: #fff; border-radius: 8px; border: 1px solid var(--line)">
+    <b>Build notes</b><br>
+    • <b>Section placement:</b> between WMPC Analysis and Review Queue, so the coach progression goes patterns → stats → flagged-moments.<br>
+    • <b>Recommendations</b> persist on the existing <code>analysis_topic_recommendations</code> table with <code>topic_id = "stat.kitchen_arrival_serving"</code> — same FPTM/drills/overall-note schema as a WMPC topic, no new editor needed.<br>
+    • <b>Add tracking</b> goes in a new <code>coach_stat_reviews(analysis_id, player_id, stat_key)</code> table — just a presence flag.<br>
+    • <b>Per-rally data</b> lives in PB Vision's augmented insights (<code>kitchen_arrivals</code> per player per rally). To unlock individual-instance review on this stat we need to import that field into our DB; the import is one new column on <code>rallies</code> + a small change to the augmented-insight import path.<br>
+    • <b>Seek</b>: each tile starts the clip at the beginning of the rally.
+  </p>
+</div>
+</body>
+</html>

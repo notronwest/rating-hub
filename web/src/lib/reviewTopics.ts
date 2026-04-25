@@ -24,14 +24,14 @@ import {
 } from "./defensiveBeats";
 import type { RallyShot } from "../types/database";
 
-/** Stable id used as the DB key for recommendations. */
-export type TopicId =
-  | "script.deep_serve"
-  | "script.deep_return_kitchen"
-  | "script.third_drop"
-  | "script.fourth_volley"
-  | "beats.direct"
-  | "beats.diagonal";
+/** Stable id used as the DB key for recommendations.
+ *
+ *  Originally a strict union of WMPC pattern ids; now a plain string
+ *  so the new "Stats to Review" topics (stat.kitchen_arrival.serving,
+ *  stat.rally_win, stat.shot_share, etc.) flow through the same
+ *  TopicItem UI without runtime casts. The known WMPC ids are still
+ *  enumerated by TOPIC_DEFS / buildReviewTopics. */
+export type TopicId = string;
 
 export interface TopicInstance {
   id: string;            // unique within topic

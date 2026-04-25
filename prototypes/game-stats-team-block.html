@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Game Stats — Kitchen / Shots / Rallies Won (Option 2 mirrored, same scale)</title>
+  <style>
+    :root {
+      --ink: #333;
+      --muted: #666;
+      --faint: #999;
+      --bg: #f7f7f8;
+      --line: #e2e2e2;
+      --line-soft: #f0f0f0;
+      --blue: #1a73e8;
+      --blue-bg: #e8f0fe;
+      --green: #1e7e34;
+      --green-soft: #e6f4ea;
+      --amber: #d97706;
+      --amber-soft: #fff8e1;
+      --red: #c62828;
+      --red-soft: #fce8e6;
+      --team0: #2e5cf3;
+      --team1: #f59e0b;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink);
+      font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    body { padding: 24px 32px 80px; }
+    .wrap { max-width: 1100px; margin: 0 auto; }
+    h1 { font-size: 18px; margin: 0 0 4px; font-weight: 600; }
+    .lead { color: var(--muted); margin: 0 0 24px; font-size: 13px; }
+
+    .panel {
+      background: #fff; border: 1px solid var(--line); border-radius: 10px;
+      padding: 16px; margin-bottom: 14px;
+    }
+    .panel h3 { margin: 0 0 14px; font-size: 14px; font-weight: 600;
+      display: flex; align-items: center; gap: 10px; }
+    .panel h3 .legend {
+      font-size: 10px; font-weight: 500; color: var(--muted);
+      letter-spacing: 0; text-transform: none;
+    }
+    .panel h3 .sw {
+      display: inline-block; width: 10px; height: 10px; border-radius: 2px;
+      margin-right: 4px; vertical-align: -1px;
+    }
+    .sub-h {
+      font-size: 11px; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.6px; margin: 0 0 10px;
+    }
+    .group + .group { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line-soft); }
+
+    .av {
+      width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
+      display: grid; place-items: center; color: #fff; font-size: 10px; font-weight: 700;
+    }
+    .av.t0 { background: var(--team0); }
+    .av.t1 { background: var(--team1); }
+
+    /* Option 2 — Mirrored teams, single shared 0-100% scale */
+    .row {
+      display: grid;
+      grid-template-columns: 110px 1fr 110px;
+      gap: 10px; align-items: center;
+      padding: 6px 0;
+    }
+    .row .nm {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 13px; font-weight: 600; min-width: 0;
+    }
+    .row .nm .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .row .track {
+      position: relative; height: 22px; background: #f1f3f5; border-radius: 4px; overflow: hidden;
+    }
+    .row .track::after {
+      content: ""; position: absolute; left: 50%; top: 2px; bottom: 2px; width: 1px;
+      background: rgba(0,0,0,0.08);
+    }
+    .row .fill {
+      position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px;
+      display: flex; align-items: center; justify-content: flex-end;
+      padding-right: 8px; color: #fff; font-size: 11px; font-weight: 700;
+      gap: 4px;
+    }
+    .row .fill .denom {
+      font-weight: 500; font-size: 10px; opacity: 0.85;
+    }
+    .row .action { display: flex; justify-content: flex-end; }
+
+    .add {
+      flex-shrink: 0;
+      padding: 4px 9px; font-size: 11px; font-weight: 600;
+      background: #fff; color: var(--blue);
+      border: 1px dashed #c6dafc; border-radius: 4px;
+      cursor: pointer; font-family: inherit; white-space: nowrap;
+      opacity: 0; transition: opacity 0.15s;
+    }
+    .row:hover .add { opacity: 1; }
+    .add:hover { background: var(--blue-bg); border-style: solid; }
+    .add.added {
+      color: var(--green); border-color: #b7e1c4; background: var(--green-soft);
+      border-style: solid; opacity: 1;
+    }
+
+    .tier-good { background: #4caf50; }
+    .tier-mid  { background: #ffc107; color: #5b4400 !important; }
+    .tier-low  { background: #ef5350; }
+
+    .footnote {
+      font-size: 11px; color: var(--faint); padding: 6px 0 0; line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Game Stats — Option 2 mirrored applied to all three blocks</h1>
+  <p class="lead">
+    Kitchen Arrival (already approved) plus Shot Distribution and Rallies Won using the same layout: avatar + name → bar grows from 0 on a shared 0–100% scale → "+ Add to review" button on hover. Real numbers from this game.
+  </p>
+
+  <!-- ════════════════════════════════ KITCHEN ARRIVAL ════════════════════════════════ -->
+  <div class="panel">
+    <h3>Kitchen Arrival
+      <span class="legend"><span class="sw tier-good"></span>≥80% &nbsp; <span class="sw tier-mid"></span>50–79% &nbsp; <span class="sw tier-low"></span>&lt;50%</span>
+    </h3>
+
+    <div class="group">
+      <div class="sub-h">When on Serving Team</div>
+      <div class="row">
+        <div class="nm"><span class="av t0">JN</span><span class="who">Jelena</span></div>
+        <div class="track"><div class="fill tier-good" style="width: 85%">85% <span class="denom">11/13</span></div></div>
+        <div class="action"><button class="add">+ Add to review</button></div>
+      </div>
+      <div class="row">
+        <div class="nm"><span class="av t0">GW</span><span class="who">Geoff</span></div>
+        <div class="track"><div class="fill tier-mid" style="width: 77%">77% <span class="denom">10/13</span></div></div>
+        <div class="action"><button class="add">+ Add to review</button></div>
+      </div>
+      <div class="row">
+        <div class="nm"><span class="av t1">CG</span><span class="who">Celeste</span></div>
+        <div class="track"><div class="fill tier-low" style="width: 47%">47% <span class="denom">8/17</span></div></div>
+        <div class="action"><button class="add added">✓ Added</button></div>
+      </div>
+      <div class="row">
+        <div class="nm"><span class="av t1">RW</span><span class="who">Ron</span></div>
+        <div class="track"><div class="fill tier-mid" style="width: 77%">77% <span class="denom">13/17</span></div></div>
+        <div class="action"><button class="add">+ Add to review</button></div>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="sub-h">When on Returning Team</div>
+      <div class="row">
+        <div class="nm"><span class="av t0">JN</span><span class="who">Jelena</span></div>
+        <div class="track"><div class="fill tier-good" style="width: 100%">100% <span class="denom">17/17</span></div></div>
+        <div class="action"><button class="add">+ Add to review</button></div>
+      </div>
+      <div class="row">
+        <div class="nm"><span class="av t0">GW</span><span class="who">Geoff</span></div>
+        <div class="track"><div class="fill tier-good" style="width: 100%">100% <span class="denom">13/13</span></div></div>
+        <div class="action"><button class="add">+ Add to review</button></div>
+      </div>
+      <div class="row">
+        <div class="nm"><span class="av t1">CG</span><span class="who">Celeste</span></div>
+        <div class="track"><div class="fill tier-good" style="width: 92%">92% <span class="denom">12/13</span></div></div>
+        <div class="action"><button class="add">+ Add to review</button></div>
+      </div>
+      <div class="row">
+        <div class="nm"><span class="av t1">RW</span><span class="who">Ron</span></div>
+        <div class="track"><div class="fill tier-good" style="width: 100%">100% <span class="denom">17/17</span></div></div>
+        <div class="action"><button class="add">+ Add to review</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════ SHOT DISTRIBUTION ════════════════════════════════ -->
+  <div class="panel">
+    <h3>Shot Distribution
+      <span class="legend">% of partner-pair's shots · 50% = balanced &nbsp;
+        <span class="sw tier-good"></span>40–60% &nbsp; <span class="sw tier-mid"></span>30–39 / 61–70 &nbsp; <span class="sw tier-low"></span>&lt;30 or &gt;70
+      </span>
+    </h3>
+
+    <div class="group">
+      <div class="sub-h">Share of partner-pair's shots</div>
+      <div class="row">
+        <div class="nm"><span class="av t0">JN</span><span class="who">Jelena</span></div>
+        <div class="track"><div class="fill tier-good" style="width: 52.38%">52% <span class="denom">66 shots</span></div></div>
+        <div class="action"><button class="add">+ Add to review</button></div>
+      </div>
+      <div class="row">
+        <div class="nm"><span class="av t0">GW</span><span class="who">Geoff</span></div>
+        <div class="track"><div class="fill tier-good" style="width: 47.62%">48% <span class="denom">60 shots</span></div></div>
+        <div class="action"><button class="add">+ Add to review</button></div>
+      </div>
+      <div class="row">
+        <div class="nm"><span class="av t1">CG</span><span class="who">Celeste</span></div>
+        <div class="track"><div class="fill tier-mid" style="width: 60.9%">61% <span class="denom">81 shots</span></div></div>
+        <div class="action"><button class="add">+ Add to review</button></div>
+      </div>
+      <div class="row">
+        <div class="nm"><span class="av t1">RW</span><span class="who">Ron</span></div>
+        <div class="track"><div class="fill tier-mid" style="width: 39.1%">39% <span class="denom">52 shots</span></div></div>
+        <div class="action"><button class="add">+ Add to review</button></div>
+      </div>
+    </div>
+
+    <div class="footnote">
+      Partner pairs sum to 100% — Jelena+Geoff = 126 shots; Celeste+Ron = 133 shots.
+      Coaching read: high % = dominant; low % = isolated/passive. Adding to review surfaces
+      the rallies where the player's share was extreme (got hogged or got isolated).
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════ RALLIES WON ════════════════════════════════ -->
+  <div class="panel">
+    <h3>Rallies Won
+      <span class="legend"><span class="sw tier-good"></span>≥60% &nbsp; <span class="sw tier-mid"></span>40–59% &nbsp; <span class="sw tier-low"></span>&lt;40%</span>
+    </h3>
+
+    <div class="group">
+      <div class="sub-h">Rally win rate when on court</div>
+      <div class="row">
+        <div class="nm"><span class="av t0">JN</span><span class="who">Jelena</span></div>
+        <div class="track"><div class="fill tier-mid" style="width: 43.9%">44% <span class="denom">18/41</span></div></div>
+        <div class="action"><button class="add">+ Add to review</button></div>
+      </div>
+      <div class="row">
+        <div class="nm"><span class="av t0">GW</span><span class="who">Geoff</span></div>
+        <div class="track"><div class="fill tier-mid" style="width: 43.9%">44% <span class="denom">18/41</span></div></div>
+        <div class="action"><button class="add">+ Add to review</button></div>
+      </div>
+      <div class="row">
+        <div class="nm"><span class="av t1">CG</span><span class="who">Celeste</span></div>
+        <div class="track"><div class="fill tier-mid" style="width: 56.1%">56% <span class="denom">23/41</span></div></div>
+        <div class="action"><button class="add">+ Add to review</button></div>
+      </div>
+      <div class="row">
+        <div class="nm"><span class="av t1">RW</span><span class="who">Ron</span></div>
+        <div class="track"><div class="fill tier-mid" style="width: 56.1%">56% <span class="denom">23/41</span></div></div>
+        <div class="action"><button class="add">+ Add to review</button></div>
+      </div>
+    </div>
+
+    <div class="footnote">
+      Partners share rally win rate — Jelena/Geoff and Celeste/Ron win rallies together.
+      Adding to review still produces a per-player FPTM block, with the same 41 rally instances (green = won, red = lost) so the diagnosis is recorded against the individual player.
+    </div>
+  </div>
+
+  <p class="lead" style="margin-top: 28px; padding: 14px; background: #fff; border-radius: 8px; border: 1px solid var(--line)">
+    <b>Definitions used in this prototype</b><br>
+    • <b>Kitchen Arrival</b> · per player · % of opportunities the player closed to the kitchen — independent values per player.<br>
+    • <b>Shot Distribution</b> · per player · % of partner-pair's shots — sums to 100% within each team. Coaching signal is distance from 50%.<br>
+    • <b>Rallies Won</b> · per player · team's rally win rate while player was on court — partners share by definition.<br>
+    Tell me if you want different definitions for Shot Distribution or Rallies Won (e.g. per-rally winning-shot attribution, length-bucketed, etc.) and I'll iterate.
+  </p>
+</div>
+</body>
+</html>

@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Game Stats — Kitchen Arrival · 4 layouts</title>
+  <style>
+    :root {
+      --ink: #333;
+      --muted: #666;
+      --faint: #999;
+      --bg: #f7f7f8;
+      --line: #e2e2e2;
+      --line-soft: #f0f0f0;
+      --blue: #1a73e8;
+      --blue-bg: #e8f0fe;
+      --green: #1e7e34;
+      --green-soft: #e6f4ea;
+      --amber: #d97706;
+      --amber-soft: #fff8e1;
+      --red: #c62828;
+      --red-soft: #fce8e6;
+      --team0: #2e5cf3;
+      --team1: #f59e0b;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink);
+      font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    body { padding: 24px 32px 80px; }
+    .wrap { max-width: 1100px; margin: 0 auto; }
+    h1 { font-size: 18px; margin: 0 0 4px; font-weight: 600; }
+    .lead { color: var(--muted); margin: 0 0 24px; font-size: 13px; }
+
+    h2 {
+      font-size: 11px; margin: 32px 0 8px; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.8px; font-weight: 700;
+    }
+    .opt-note { font-size: 12px; color: var(--muted); margin: -4px 0 12px; }
+
+    .panel {
+      background: #fff; border: 1px solid var(--line); border-radius: 10px;
+      padding: 16px; margin-bottom: 14px;
+    }
+    .panel h3 { margin: 0 0 14px; font-size: 14px; font-weight: 600; }
+    .sub-h {
+      font-size: 11px; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.6px; margin: 0 0 10px;
+    }
+    .group + .group { margin-top: 18px; }
+
+    /* Team color chips for player avatars */
+    .av {
+      width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
+      display: grid; place-items: center; color: #fff; font-size: 10px; font-weight: 700;
+      letter-spacing: 0.3px;
+    }
+    .av.t0 { background: var(--team0); }
+    .av.t1 { background: var(--team1); }
+    .team-tag {
+      font-size: 9px; font-weight: 700; letter-spacing: 0.4px;
+      padding: 1px 5px; border-radius: 3px; text-transform: uppercase;
+    }
+    .team-tag.t0 { background: #dde6ff; color: var(--team0); }
+    .team-tag.t1 { background: #ffe9c2; color: var(--team1); }
+
+    /* Add button — appears on hover */
+    .add {
+      flex-shrink: 0;
+      padding: 4px 9px; font-size: 11px; font-weight: 600;
+      background: #fff; color: var(--blue);
+      border: 1px dashed #c6dafc; border-radius: 4px;
+      cursor: pointer; font-family: inherit; white-space: nowrap;
+    }
+    .row:hover .add { opacity: 1; }
+    .add { opacity: 0; transition: opacity 0.15s; }
+    .add.added {
+      color: var(--green); border-color: #b7e1c4; background: var(--green-soft);
+      border-style: solid; opacity: 1;
+    }
+    .add:hover { background: var(--blue-bg); border-style: solid; }
+
+    /* Tier colors */
+    .tier-good { background: #4caf50; }     /* >= 80% */
+    .tier-mid  { background: #ffc107; }     /* 50-79% */
+    .tier-low  { background: #ef5350; }     /* < 50% */
+    .tier-good-text { color: var(--green); }
+    .tier-mid-text  { color: var(--amber); }
+    .tier-low-text  { color: var(--red); }
+
+    /* ─────────────────────── OPTION 1 — Ranked single list ─────────────────────── */
+    .opt1-row {
+      display: grid;
+      grid-template-columns: 24px 28px minmax(110px, 1fr) 80px minmax(0, 5fr) 90px;
+      gap: 10px; align-items: center;
+      padding: 8px 6px; border-radius: 6px;
+    }
+    .opt1-row:hover { background: #fafbff; }
+    .opt1-rank { font-size: 11px; font-weight: 700; color: var(--faint); text-align: right; }
+    .opt1-name { font-size: 13px; font-weight: 600; }
+    .opt1-team { font-size: 10px; color: var(--muted); }
+    .opt1-track {
+      position: relative; height: 22px; background: #f1f3f5; border-radius: 4px; overflow: hidden;
+    }
+    .opt1-fill {
+      position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px;
+      display: flex; align-items: center; justify-content: flex-end;
+      padding-right: 8px; color: #fff; font-size: 11px; font-weight: 700;
+    }
+    .opt1-pct { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
+
+    /* ─────────────────────── OPTION 2 — Mirrored, fixed proportions ─────────────────────── */
+    /* All 4 players share a SINGLE 0–100% scale — each row is full-width with bar drawn from 0 */
+    .opt2-row {
+      display: grid;
+      grid-template-columns: 100px 1fr 110px;
+      gap: 10px; align-items: center;
+      padding: 6px 0;
+    }
+    .opt2-name {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 13px; font-weight: 600; min-width: 0;
+    }
+    .opt2-name .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .opt2-track {
+      position: relative; height: 22px; background: #f1f3f5; border-radius: 4px; overflow: hidden;
+    }
+    .opt2-track::after {
+      content: ""; position: absolute; left: 50%; top: 2px; bottom: 2px; width: 1px;
+      background: rgba(0,0,0,0.08);
+    }
+    .opt2-fill {
+      position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px;
+      display: flex; align-items: center; justify-content: flex-end;
+      padding-right: 8px; color: #fff; font-size: 11px; font-weight: 700;
+    }
+    .opt2-action { display: flex; justify-content: flex-end; }
+
+    /* ─────────────────────── OPTION 3 — Stat cards ─────────────────────── */
+    .opt3-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+    }
+    .opt3-card {
+      border: 1px solid var(--line); border-radius: 8px; padding: 12px;
+      display: flex; flex-direction: column; gap: 8px; background: #fff;
+      position: relative; transition: border-color 0.15s;
+    }
+    .opt3-card:hover { border-color: #c6dafc; }
+    .opt3-card .head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .opt3-card .head .name {
+      font-size: 13px; font-weight: 600;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .opt3-card .pct {
+      font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1;
+    }
+    .opt3-card .denom { font-size: 11px; color: var(--muted); margin-left: 6px; font-weight: 500; }
+    .opt3-card .ribbon {
+      height: 4px; border-radius: 2px;
+      background: #f1f3f5; position: relative; overflow: hidden;
+    }
+    .opt3-card .ribbon-fill {
+      position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px;
+    }
+    .opt3-card .add { opacity: 1; align-self: flex-start; }
+
+    /* ─────────────────────── OPTION 4 — Table with twin bars ─────────────────────── */
+    .opt4 { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .opt4 th {
+      text-align: left; font-size: 11px; font-weight: 700;
+      color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px;
+      padding: 6px 8px; border-bottom: 1px solid var(--line);
+    }
+    .opt4 th.num { text-align: right; }
+    .opt4 td { padding: 8px; border-bottom: 1px solid var(--line-soft); vertical-align: middle; }
+    .opt4 tr:last-child td { border-bottom: none; }
+    .opt4 tr:hover td { background: #fafbff; }
+    .opt4 .nm { display: flex; align-items: center; gap: 8px; min-width: 140px; }
+    .opt4 .pair-cell { display: flex; align-items: center; gap: 8px; }
+    .opt4 .pair-cell .pct {
+      width: 42px; text-align: right; font-weight: 700;
+      font-variant-numeric: tabular-nums; font-size: 13px;
+    }
+    .opt4 .pair-cell .track {
+      position: relative; height: 16px; background: #f1f3f5; border-radius: 3px;
+      flex: 1; overflow: hidden;
+    }
+    .opt4 .pair-cell .fill {
+      position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px;
+    }
+    .opt4 .actions { white-space: nowrap; text-align: right; }
+    .opt4 .actions .add { opacity: 1; margin-left: 6px; }
+    .opt4 .actions .add.disabled { opacity: 0.4; cursor: default; }
+    .legend {
+      display: inline-flex; gap: 14px; align-items: center; font-size: 11px;
+      color: var(--muted); margin-left: 10px;
+    }
+    .legend .sw {
+      display: inline-block; width: 10px; height: 10px; border-radius: 2px;
+      margin-right: 4px; vertical-align: -1px;
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Game Stats · Kitchen Arrival — 4 layout options</h1>
+  <p class="lead">
+    Real data from this game. Goals: clearer player attribution, length-proportional bars (not just color), and a sensible spot for the "Add to Stat Review" coach action.
+  </p>
+
+  <!-- ════════════════════════════════════════════════════════════════════════════ -->
+  <!-- OPTION 1 — Ranked single list                                                -->
+  <!-- ════════════════════════════════════════════════════════════════════════════ -->
+  <h2>Option 1 — Ranked single list</h2>
+  <p class="opt-note">
+    All four players in one ordered list per role, sorted worst-to-best so the player who needs review surfaces. Bars share a single 0–100% scale so length = magnitude. Team affiliation lives on the avatar color and a small chip.
+  </p>
+  <div class="panel">
+    <h3>Kitchen Arrival</h3>
+
+    <div class="group">
+      <div class="sub-h">When on Serving Team</div>
+      <!-- Sorted ascending so worst is on top — coaching attention goes to the lowest first -->
+      <div class="row opt1-row">
+        <div class="opt1-rank">#1</div>
+        <div class="av t1">CG</div>
+        <div>
+          <div class="opt1-name">Celeste</div>
+          <div class="opt1-team"><span class="team-tag t1">Team 1</span></div>
+        </div>
+        <div class="opt1-pct tier-low-text">47%</div>
+        <div class="opt1-track"><div class="opt1-fill tier-low" style="width: 47%">8/17</div></div>
+        <button class="add added">✓ Added</button>
+      </div>
+      <div class="row opt1-row">
+        <div class="opt1-rank">#2</div>
+        <div class="av t0">GW</div>
+        <div>
+          <div class="opt1-name">Geoff</div>
+          <div class="opt1-team"><span class="team-tag t0">Team 0</span></div>
+        </div>
+        <div class="opt1-pct tier-mid-text">77%</div>
+        <div class="opt1-track"><div class="opt1-fill tier-mid" style="width: 77%">10/13</div></div>
+        <button class="add">+ Add to review</button>
+      </div>
+      <div class="row opt1-row">
+        <div class="opt1-rank">#3</div>
+        <div class="av t1">RW</div>
+        <div>
+          <div class="opt1-name">Ron</div>
+          <div class="opt1-team"><span class="team-tag t1">Team 1</span></div>
+        </div>
+        <div class="opt1-pct tier-mid-text">77%</div>
+        <div class="opt1-track"><div class="opt1-fill tier-mid" style="width: 77%">13/17</div></div>
+        <button class="add">+ Add to review</button>
+      </div>
+      <div class="row opt1-row">
+        <div class="opt1-rank">#4</div>
+        <div class="av t0">JN</div>
+        <div>
+          <div class="opt1-name">Jelena</div>
+          <div class="opt1-team"><span class="team-tag t0">Team 0</span></div>
+        </div>
+        <div class="opt1-pct tier-good-text">85%</div>
+        <div class="opt1-track"><div class="opt1-fill tier-good" style="width: 85%">11/13</div></div>
+        <button class="add">+ Add to review</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="sub-h">When on Returning Team</div>
+      <div class="row opt1-row">
+        <div class="opt1-rank">#1</div>
+        <div class="av t1">CG</div>
+        <div>
+          <div class="opt1-name">Celeste</div>
+          <div class="opt1-team"><span class="team-tag t1">Team 1</span></div>
+        </div>
+        <div class="opt1-pct tier-good-text">92%</div>
+        <div class="opt1-track"><div class="opt1-fill tier-good" style="width: 92%">12/13</div></div>
+        <button class="add">+ Add to review</button>
+      </div>
+      <div class="row opt1-row">
+        <div class="opt1-rank">=2</div>
+        <div class="av t0">JN</div>
+        <div>
+          <div class="opt1-name">Jelena</div>
+          <div class="opt1-team"><span class="team-tag t0">Team 0</span></div>
+        </div>
+        <div class="opt1-pct tier-good-text">100%</div>
+        <div class="opt1-track"><div class="opt1-fill tier-good" style="width: 100%">17/17</div></div>
+        <button class="add">+ Add to review</button>
+      </div>
+      <div class="row opt1-row">
+        <div class="opt1-rank">=2</div>
+        <div class="av t0">GW</div>
+        <div>
+          <div class="opt1-name">Geoff</div>
+          <div class="opt1-team"><span class="team-tag t0">Team 0</span></div>
+        </div>
+        <div class="opt1-pct tier-good-text">100%</div>
+        <div class="opt1-track"><div class="opt1-fill tier-good" style="width: 100%">13/13</div></div>
+        <button class="add">+ Add to review</button>
+      </div>
+      <div class="row opt1-row">
+        <div class="opt1-rank">=2</div>
+        <div class="av t1">RW</div>
+        <div>
+          <div class="opt1-name">Ron</div>
+          <div class="opt1-team"><span class="team-tag t1">Team 1</span></div>
+        </div>
+        <div class="opt1-pct tier-good-text">100%</div>
+        <div class="opt1-track"><div class="opt1-fill tier-good" style="width: 100%">17/17</div></div>
+        <button class="add">+ Add to review</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════════════════════ -->
+  <!-- OPTION 2 — Mirrored teams, single shared 0-100% scale                        -->
+  <!-- ════════════════════════════════════════════════════════════════════════════ -->
+  <h2>Option 2 — Mirrored teams (same scale)</h2>
+  <p class="opt-note">
+    Keeps the existing "team-on-each-side" spatial metaphor that mirrors the court, but every bar grows from <em>left to right</em> on the SAME 0–100% scale, so 100% is always longer than 85%. Center tick at 50% gives the eye a reference. Team grouping by avatar + colored row underline.
+  </p>
+  <div class="panel">
+    <h3>Kitchen Arrival</h3>
+
+    <div class="group">
+      <div class="sub-h">When on Serving Team</div>
+      <div class="row opt2-row">
+        <div class="opt2-name"><span class="av t0">JN</span><span class="who">Jelena</span></div>
+        <div class="opt2-track"><div class="opt2-fill tier-good" style="width: 85%">85%</div></div>
+        <div class="opt2-action"><button class="add">+ Add to review</button></div>
+      </div>
+      <div class="row opt2-row">
+        <div class="opt2-name"><span class="av t0">GW</span><span class="who">Geoff</span></div>
+        <div class="opt2-track"><div class="opt2-fill tier-mid" style="width: 77%">77%</div></div>
+        <div class="opt2-action"><button class="add">+ Add to review</button></div>
+      </div>
+      <div class="row opt2-row">
+        <div class="opt2-name"><span class="av t1">CG</span><span class="who">Celeste</span></div>
+        <div class="opt2-track"><div class="opt2-fill tier-low" style="width: 47%">47%</div></div>
+        <div class="opt2-action"><button class="add added">✓ Added</button></div>
+      </div>
+      <div class="row opt2-row">
+        <div class="opt2-name"><span class="av t1">RW</span><span class="who">Ron</span></div>
+        <div class="opt2-track"><div class="opt2-fill tier-mid" style="width: 77%">77%</div></div>
+        <div class="opt2-action"><button class="add">+ Add to review</button></div>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="sub-h">When on Returning Team</div>
+      <div class="row opt2-row">
+        <div class="opt2-name"><span class="av t0">JN</span><span class="who">Jelena</span></div>
+        <div class="opt2-track"><div class="opt2-fill tier-good" style="width: 100%">100%</div></div>
+        <div class="opt2-action"><button class="add">+ Add to review</button></div>
+      </div>
+      <div class="row opt2-row">
+        <div class="opt2-name"><span class="av t0">GW</span><span class="who">Geoff</span></div>
+        <div class="opt2-track"><div class="opt2-fill tier-good" style="width: 100%">100%</div></div>
+        <div class="opt2-action"><button class="add">+ Add to review</button></div>
+      </div>
+      <div class="row opt2-row">
+        <div class="opt2-name"><span class="av t1">CG</span><span class="who">Celeste</span></div>
+        <div class="opt2-track"><div class="opt2-fill tier-good" style="width: 92%">92%</div></div>
+        <div class="opt2-action"><button class="add">+ Add to review</button></div>
+      </div>
+      <div class="row opt2-row">
+        <div class="opt2-name"><span class="av t1">RW</span><span class="who">Ron</span></div>
+        <div class="opt2-track"><div class="opt2-fill tier-good" style="width: 100%">100%</div></div>
+        <div class="opt2-action"><button class="add">+ Add to review</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════════════════════ -->
+  <!-- OPTION 3 — Stat cards                                                        -->
+  <!-- ════════════════════════════════════════════════════════════════════════════ -->
+  <h2>Option 3 — Player stat cards</h2>
+  <p class="opt-note">
+    Each player gets a card with the % as the dominant element (fast scan, no length comparison needed). Thin proportional ribbon under the % gives the eye a length signal too. "+ Add to review" button always visible at the bottom of each card — no hover-to-reveal.
+  </p>
+  <div class="panel">
+    <h3>Kitchen Arrival</h3>
+
+    <div class="group">
+      <div class="sub-h">When on Serving Team</div>
+      <div class="opt3-grid">
+        <div class="opt3-card">
+          <div class="head"><span class="av t0">JN</span><span class="name">Jelena</span></div>
+          <div class="pct tier-good-text">85%<span class="denom">11/13</span></div>
+          <div class="ribbon"><div class="ribbon-fill tier-good" style="width: 85%"></div></div>
+          <button class="add">+ Add to review</button>
+        </div>
+        <div class="opt3-card">
+          <div class="head"><span class="av t0">GW</span><span class="name">Geoff</span></div>
+          <div class="pct tier-mid-text">77%<span class="denom">10/13</span></div>
+          <div class="ribbon"><div class="ribbon-fill tier-mid" style="width: 77%"></div></div>
+          <button class="add">+ Add to review</button>
+        </div>
+        <div class="opt3-card" style="border-color: var(--red); background: #fffafa">
+          <div class="head"><span class="av t1">CG</span><span class="name">Celeste</span></div>
+          <div class="pct tier-low-text">47%<span class="denom">8/17</span></div>
+          <div class="ribbon"><div class="ribbon-fill tier-low" style="width: 47%"></div></div>
+          <button class="add added">✓ Added to review</button>
+        </div>
+        <div class="opt3-card">
+          <div class="head"><span class="av t1">RW</span><span class="name">Ron</span></div>
+          <div class="pct tier-mid-text">77%<span class="denom">13/17</span></div>
+          <div class="ribbon"><div class="ribbon-fill tier-mid" style="width: 77%"></div></div>
+          <button class="add">+ Add to review</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="sub-h">When on Returning Team</div>
+      <div class="opt3-grid">
+        <div class="opt3-card">
+          <div class="head"><span class="av t0">JN</span><span class="name">Jelena</span></div>
+          <div class="pct tier-good-text">100%<span class="denom">17/17</span></div>
+          <div class="ribbon"><div class="ribbon-fill tier-good" style="width: 100%"></div></div>
+          <button class="add">+ Add to review</button>
+        </div>
+        <div class="opt3-card">
+          <div class="head"><span class="av t0">GW</span><span class="name">Geoff</span></div>
+          <div class="pct tier-good-text">100%<span class="denom">13/13</span></div>
+          <div class="ribbon"><div class="ribbon-fill tier-good" style="width: 100%"></div></div>
+          <button class="add">+ Add to review</button>
+        </div>
+        <div class="opt3-card">
+          <div class="head"><span class="av t1">CG</span><span class="name">Celeste</span></div>
+          <div class="pct tier-good-text">92%<span class="denom">12/13</span></div>
+          <div class="ribbon"><div class="ribbon-fill tier-good" style="width: 92%"></div></div>
+          <button class="add">+ Add to review</button>
+        </div>
+        <div class="opt3-card">
+          <div class="head"><span class="av t1">RW</span><span class="name">Ron</span></div>
+          <div class="pct tier-good-text">100%<span class="denom">17/17</span></div>
+          <div class="ribbon"><div class="ribbon-fill tier-good" style="width: 100%"></div></div>
+          <button class="add">+ Add to review</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════════════════════ -->
+  <!-- OPTION 4 — Table with twin bars                                              -->
+  <!-- ════════════════════════════════════════════════════════════════════════════ -->
+  <h2>Option 4 — Twin-bar table</h2>
+  <p class="opt-note">
+    Both roles in one row per player. Each role gets its own bar in its own column (full column width = 100% scale), so length is comparable across players AND roles. Action column on the right has separate "+ S" / "+ R" buttons — coach picks exactly which role to review, no hovering needed.
+  </p>
+  <div class="panel">
+    <h3>Kitchen Arrival
+      <span class="legend">
+        <span><span class="sw tier-good"></span>≥80%</span>
+        <span><span class="sw tier-mid"></span>50–79%</span>
+        <span><span class="sw tier-low"></span>&lt;50%</span>
+      </span>
+    </h3>
+    <table class="opt4">
+      <thead>
+        <tr>
+          <th>Player</th>
+          <th>Serving side</th>
+          <th>Returning side</th>
+          <th class="actions" style="text-align: right">Add to review</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><div class="nm"><span class="av t0">JN</span><b>Jelena</b><span class="team-tag t0">Team 0</span></div></td>
+          <td><div class="pair-cell">
+            <div class="track"><div class="fill tier-good" style="width: 85%"></div></div>
+            <div class="pct tier-good-text">85%</div>
+          </div></td>
+          <td><div class="pair-cell">
+            <div class="track"><div class="fill tier-good" style="width: 100%"></div></div>
+            <div class="pct tier-good-text">100%</div>
+          </div></td>
+          <td class="actions">
+            <button class="add">+ Serving</button>
+            <button class="add">+ Returning</button>
+          </td>
+        </tr>
+        <tr>
+          <td><div class="nm"><span class="av t0">GW</span><b>Geoff</b><span class="team-tag t0">Team 0</span></div></td>
+          <td><div class="pair-cell">
+            <div class="track"><div class="fill tier-mid" style="width: 77%"></div></div>
+            <div class="pct tier-mid-text">77%</div>
+          </div></td>
+          <td><div class="pair-cell">
+            <div class="track"><div class="fill tier-good" style="width: 100%"></div></div>
+            <div class="pct tier-good-text">100%</div>
+          </div></td>
+          <td class="actions">
+            <button class="add">+ Serving</button>
+            <button class="add">+ Returning</button>
+          </td>
+        </tr>
+        <tr>
+          <td><div class="nm"><span class="av t1">CG</span><b>Celeste</b><span class="team-tag t1">Team 1</span></div></td>
+          <td><div class="pair-cell">
+            <div class="track"><div class="fill tier-low" style="width: 47%"></div></div>
+            <div class="pct tier-low-text">47%</div>
+          </div></td>
+          <td><div class="pair-cell">
+            <div class="track"><div class="fill tier-good" style="width: 92%"></div></div>
+            <div class="pct tier-good-text">92%</div>
+          </div></td>
+          <td class="actions">
+            <button class="add added">✓ Serving</button>
+            <button class="add">+ Returning</button>
+          </td>
+        </tr>
+        <tr>
+          <td><div class="nm"><span class="av t1">RW</span><b>Ron</b><span class="team-tag t1">Team 1</span></div></td>
+          <td><div class="pair-cell">
+            <div class="track"><div class="fill tier-mid" style="width: 77%"></div></div>
+            <div class="pct tier-mid-text">77%</div>
+          </div></td>
+          <td><div class="pair-cell">
+            <div class="track"><div class="fill tier-good" style="width: 100%"></div></div>
+            <div class="pct tier-good-text">100%</div>
+          </div></td>
+          <td class="actions">
+            <button class="add">+ Serving</button>
+            <button class="add">+ Returning</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="lead" style="margin-top: 32px; padding: 14px; background: #fff; border-radius: 8px; border: 1px solid var(--line)">
+    <b>Trade-offs at a glance</b><br>
+    <b>Option 1 · Ranked list</b> — best for "who needs work?" — sorts the worst to the top automatically. Loses the team-mirrored court metaphor.<br>
+    <b>Option 2 · Mirrored same-scale</b> — keeps the team grouping but fixes the proportional bug. Each role still needs its own block.<br>
+    <b>Option 3 · Stat cards</b> — % is the hero element, no bar-length comparison required. Action button is always visible. Takes more vertical space.<br>
+    <b>Option 4 · Twin-bar table</b> — densest. Both roles for a player visible in one row, easy A/B compare. Buttons are explicit per role.
+  </p>
+</div>
+</body>
+</html>

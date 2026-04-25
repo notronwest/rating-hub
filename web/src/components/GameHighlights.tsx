@@ -9,6 +9,10 @@ export interface GameHighlightData {
     playerName: string;
     shotCount: number | null;
     shotAccuracy: { in?: number; net?: number; out?: number } | null;
+    /** Per-player shot selection fractions ({drop: 0.34, reset: 0.05, ...}).
+     *  Used to compute Drops / Resets totals when game_player_shot_types is
+     *  not populated (most games — that table only fills on stats import). */
+    shotSelection: { drop?: number; reset?: number } | null;
   }[];
   shotTypes: GamePlayerShotType[];
 }
@@ -31,6 +35,22 @@ export function computeHighlights(data: GameHighlightData): HighlightItem[] {
     highlights.push({
       label: "Longest Rally",
       value: `${longestRally} shots`,
+    });
+  }
+
+  // 1b. Average Shots / Rally — total shots in real rallies divided by rally
+  // count. Skips rallies with shot_count = 0/null (faults, double-bounce
+  // serves, etc.) so the average reflects actual contested points.
+  const playedRallies = data.rallies.filter((r) => (r.shot_count ?? 0) > 0);
+  if (playedRallies.length > 0) {
+    const totalShots = playedRallies.reduce(
+      (s, r) => s + (r.shot_count ?? 0),
+      0,
+    );
+    const avg = totalShots / playedRallies.length;
+    highlights.push({
+      label: "Avg Shots / Rally",
+      value: avg.toFixed(1),
     });
   }
 
@@ -64,16 +84,20 @@ export function computeHighlights(data: GameHighlightData): HighlightItem[] {
     });
   }
 
-  // 4. Total 3rd Shot Drops (sum across all players)
-  const thirdDrops = data.shotTypes
-    .filter((st) => st.shot_type === "third_drops")
-    .reduce((sum, st) => sum + (st.count ?? 0), 0);
-  highlights.push({
-    label: "3rd Shot Drops",
-    value: `${thirdDrops}`,
-  });
+  // 4. Total Drops (across all players, all rally positions). Sourced from
+  // each player's shot_selection.drop fraction × their shot_count, since
+  // game_player_shot_types isn't always populated. Round each player so the
+  // total reads naturally.
+  const totalDrops = data.players.reduce((sum, p) => {
+    const frac = p.shotSelection?.drop ?? 0;
+    return sum + Math.round((p.shotCount ?? 0) * frac);
+  }, 0);
+  if (totalDrops > 0) {
+    highlights.push({ label: "Drops", value: `${totalDrops}` });
+  }
 
-  // 5. Best 3rd Shot Percentage (highest success % among players with third_drops)
+  // 5. Best 3rd Shot Percentage — only available when game_player_shot_types
+  // has data. Skip the card entirely on games that haven't had stats import.
   const thirdDropEntries = data.shotTypes.filter(
     (st) => st.shot_type === "third_drops" && (st.count ?? 0) > 0,
   );
@@ -90,7 +114,6 @@ export function computeHighlights(data: GameHighlightData): HighlightItem[] {
     const pct =
       (best3rd.outcome_stats as Record<string, number> | null)
         ?.success_percentage;
-    // Find the player name by player_id
     const matchedPlayer = data.players.find(() => {
       return data.shotTypes.some(
         (st) =>
@@ -106,14 +129,14 @@ export function computeHighlights(data: GameHighlightData): HighlightItem[] {
     }
   }
 
-  // 6. Total Resets
-  const totalResets = data.shotTypes
-    .filter((st) => st.shot_type === "resets")
-    .reduce((sum, st) => sum + (st.count ?? 0), 0);
-  highlights.push({
-    label: "Resets",
-    value: `${totalResets}`,
-  });
+  // 6. Total Resets — same shot_selection-based fallback as Drops.
+  const totalResets = data.players.reduce((sum, p) => {
+    const frac = p.shotSelection?.reset ?? 0;
+    return sum + Math.round((p.shotCount ?? 0) * frac);
+  }, 0);
+  if (totalResets > 0) {
+    highlights.push({ label: "Resets", value: `${totalResets}` });
+  }
 
   return highlights;
 }

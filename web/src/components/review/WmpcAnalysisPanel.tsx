@@ -258,7 +258,10 @@ interface TopicItemProps {
   onAdvance: () => void;
 }
 
-function TopicItem({ topic, isOpen, onToggle, playbackId, posterUrl, onSave, onAdvance, flaggedRallyIds, shots }: TopicItemProps) {
+/** Exported so the new "Stats to Review" panel can reuse the exact same
+ *  expanded shell (FPTM editor, drills, overall note, instance timeline,
+ *  video clip) without UI duplication. */
+export function TopicItem({ topic, isOpen, onToggle, playbackId, posterUrl, onSave, onAdvance, flaggedRallyIds, shots }: TopicItemProps) {
   const addressed = isTopicAddressed(topic);
   const pctColor =
     topic.pct >= 80 ? "#1e7e34" : topic.pct >= 60 ? "#d97706" : "#c62828";

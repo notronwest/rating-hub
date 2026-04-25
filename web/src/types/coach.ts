@@ -88,3 +88,15 @@ export interface FlaggedShot {
   drills: string | null;
   created_at: string;
 }
+
+/** A coach-added entry on the new "Stats to Review" panel. The stat_key
+ *  is an open string so new stats can be added without DB changes —
+ *  current values: stat.kitchen_arrival.serving, stat.kitchen_arrival.returning,
+ *  stat.shot_share, stat.rally_win. */
+export interface CoachStatReview {
+  id: string;
+  analysis_id: string;
+  player_id: string;
+  stat_key: string;
+  created_at: string;
+}

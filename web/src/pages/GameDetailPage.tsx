@@ -97,6 +97,7 @@ export default function GameDetailPage() {
         playerName: c.name,
         shotCount: c.gp.shot_count,
         shotAccuracy: c.gp.shot_accuracy as { in?: number; net?: number; out?: number } | null,
+        shotSelection: c.gp.shot_selection as { drop?: number; reset?: number } | null,
       })),
       shotTypes: allShotTypes,
     };
@@ -118,7 +119,7 @@ export default function GameDetailPage() {
       {/* Secondary meta line — scoring type + rally count */}
       {(game.scoring_type || game.total_rallies) && (
         <div style={{ display: "flex", gap: 20, fontSize: 13, color: "#888", marginTop: -8, marginBottom: 16 }}>
-          {game.scoring_type && <span>{game.scoring_type}</span>}
+          {game.scoring_type && <span>{formatScoringType(game.scoring_type)}</span>}
           {game.total_rallies && <span>{game.total_rallies} rallies</span>}
         </div>
       )}
@@ -142,6 +143,9 @@ export default function GameDetailPage() {
             rallies={rallies}
             team0KitchenPct={game.team0_kitchen_pct}
             team1KitchenPct={game.team1_kitchen_pct}
+            orgSlug={orgId}
+            gameId={game.id}
+            orgUuid={game.org_id}
           />
         </div>
       )}
@@ -369,6 +373,12 @@ function PlayerGameCard({
 // ---------------------------------------------------------------------------
 // Small stat block (shot quality, shot selection, etc.)
 // ---------------------------------------------------------------------------
+
+function formatScoringType(s: string): string {
+  if (s === "side_out") return "Side-out scoring";
+  if (s === "rally") return "Rally scoring";
+  return s;
+}
 
 function StatBlock({ title, data, pct }: { title: string; data: Record<string, number>; pct?: boolean }) {
   return (

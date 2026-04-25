@@ -7,6 +7,7 @@ import type {
   NoteCategory,
   AnalysisSequence,
   FlaggedShot,
+  CoachStatReview,
 } from "../types/coach";
 
 /**
@@ -144,6 +145,58 @@ export async function upsertTopicRecommendation(params: {
     .single();
   if (error) throw new Error(error.message);
   return data as TopicRecommendationRow;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Stat Review entries — the "Stats to Review" panel on Coach Review.
+// Just tracks which (analysis, player, stat_key) tuples a coach has
+// added; the per-rally instances are computed live from existing data.
+// ─────────────────────────────────────────────────────────────────
+
+export async function listStatReviews(
+  analysisId: string,
+): Promise<CoachStatReview[]> {
+  const { data, error } = await supabase
+    .from("coach_stat_reviews")
+    .select("*")
+    .eq("analysis_id", analysisId);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as CoachStatReview[];
+}
+
+export async function addStatReview(params: {
+  analysisId: string;
+  playerId: string;
+  statKey: string;
+}): Promise<CoachStatReview> {
+  const { data, error } = await supabase
+    .from("coach_stat_reviews")
+    .upsert(
+      {
+        analysis_id: params.analysisId,
+        player_id: params.playerId,
+        stat_key: params.statKey,
+      },
+      { onConflict: "analysis_id,player_id,stat_key" },
+    )
+    .select("*")
+    .single();
+  if (error) throw new Error(error.message);
+  return data as CoachStatReview;
+}
+
+export async function removeStatReview(params: {
+  analysisId: string;
+  playerId: string;
+  statKey: string;
+}): Promise<void> {
+  const { error } = await supabase
+    .from("coach_stat_reviews")
+    .delete()
+    .eq("analysis_id", params.analysisId)
+    .eq("player_id", params.playerId)
+    .eq("stat_key", params.statKey);
+  if (error) throw new Error(error.message);
 }
 
 /** Save a Mux playback ID on the game row. */

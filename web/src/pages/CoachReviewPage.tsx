@@ -44,6 +44,7 @@ import FptmEditor from "../components/analyze/FptmEditor";
 import GameHeader from "../components/GameHeader";
 import PatternsToolbar from "../components/patterns/PatternsToolbar";
 import WmpcAnalysisPanel from "../components/review/WmpcAnalysisPanel";
+import StatReviewPanel from "../components/review/StatReviewPanel";
 import ConfirmModal from "../components/ConfirmModal";
 import { summarizeFptm, type FptmValue } from "../lib/fptm";
 
@@ -55,6 +56,7 @@ interface GameRow {
   pbvision_bucket: string | null;
   mux_playback_id: string | null;
   scoring_type: string | null;
+  session_index: number;
 }
 
 interface PlayerRow {
@@ -173,7 +175,7 @@ export default function CoachReviewPage() {
       const { data: g } = await supabase
         .from("games")
         .select(
-          "id, org_id, session_name, pbvision_video_id, pbvision_bucket, mux_playback_id, scoring_type",
+          "id, org_id, session_name, pbvision_video_id, pbvision_bucket, mux_playback_id, scoring_type, session_index",
         )
         .eq("id", gameId)
         .single();
@@ -888,6 +890,21 @@ export default function CoachReviewPage() {
             flags={flags}
           />
         )}
+
+        <StatReviewPanel
+          analysisId={analysis?.id ?? null}
+          player={selectedPlayer}
+          players={players}
+          rallies={rallies}
+          shots={shots}
+          pbvVideoId={game.pbvision_video_id}
+          sessionIndex={game.session_index}
+          playbackId={game.mux_playback_id}
+          posterUrl={posterUrl}
+          orgSlug={orgId ?? ""}
+          gameId={gameId ?? ""}
+          flags={flags}
+        />
 
         <section
           style={{
