@@ -47,6 +47,18 @@ interface Payload {
 }
 
 Deno.serve(async (req) => {
+  // CORS preflight — see send-rating-report-pdf for context.
+  if (req.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Authorization, Content-Type",
+        "Access-Control-Max-Age": "86400",
+      },
+    });
+  }
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
   // Auth

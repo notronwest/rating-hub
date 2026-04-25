@@ -36,16 +36,17 @@ import {
   type PerfTierSpec,
   type PlayerRatingReport,
 } from "../lib/playerRatingReport";
-import { BarChart, Sparkline, TrendChart } from "../components/report/MiniCharts";
+import { BarChart, Sparkline } from "../components/report/MiniCharts";
 
 const DEFAULT_WINDOW = 6;
 const WINDOW_OPTIONS = [3, 6, 10, 20];
 
-interface PlayerRow {
+export interface PlayerRow {
   id: string;
   display_name: string;
   slug: string;
   avatar_url: string | null;
+  email: string | null;
 }
 
 interface GameLite {
@@ -119,7 +120,7 @@ export default function PlayerRatingReportPage() {
           );
           const { data: players } = await supabase
             .from("players")
-            .select("id, display_name, slug, avatar_url")
+            .select("id, display_name, slug, avatar_url, email")
             .in("id", playerIds);
           const allPlayers = (players ?? []) as PlayerRow[];
           if (!cancelled) setSessionPlayers(allPlayers);
@@ -147,7 +148,7 @@ export default function PlayerRatingReportPage() {
         } else {
           const { data: players } = await supabase
             .from("players")
-            .select("id, display_name, slug, avatar_url")
+            .select("id, display_name, slug, avatar_url, email")
             .eq("slug", slug!)
             .limit(1);
           p = (players?.[0] as PlayerRow | undefined) ?? null;
@@ -428,6 +429,15 @@ function Toolbar({
           </div>
         </>
       )}
+      {/* Send the PDF straight to the player. Only shown when we have
+          an email on file — no point offering an action we can't take. */}
+      {isSessionScoped && sessionId && player.email && (
+        <SendToPlayerButton
+          sessionId={sessionId}
+          player={player}
+          sessionLabel={sessionLabel}
+        />
+      )}
       <button
         onClick={() => window.print()}
         style={{
@@ -448,6 +458,279 @@ function Toolbar({
   );
 }
 
+// ─────────────────────────── Send-to-player button ───────────────────────────
+
+function SendToPlayerButton({
+  sessionId,
+  player,
+  sessionLabel,
+}: {
+  sessionId: string;
+  player: PlayerRow;
+  sessionLabel: string | null;
+}) {
+  const [status, setStatus] = useState<
+    "idle" | "generating" | "sending" | "sent" | "error"
+  >("idle");
+  const [msg, setMsg] = useState<string | null>(null);
+  const [showConfirm, setShowConfirm] = useState(false);
+
+  async function doSend() {
+    setShowConfirm(false);
+    setStatus("generating");
+    setMsg(null);
+    try {
+      // Grab the report DOM node we want to rasterize. We want
+      // `.prr-root` (the whole report) minus `.prr-noprint` (the
+      // toolbar). Cloning + stripping noprint nodes keeps the source
+      // DOM untouched while letting html2canvas render exactly what
+      // the print stylesheet would show.
+      const root = document.querySelector<HTMLElement>(".prr-root");
+      if (!root) throw new Error("Report not found on the page.");
+      const node = root.cloneNode(true) as HTMLElement;
+      node
+        .querySelectorAll<HTMLElement>(".prr-noprint")
+        .forEach((el) => el.remove());
+      // Detach the clone in an off-screen container so html2canvas can
+      // still lay it out.
+      const holder = document.createElement("div");
+      holder.style.position = "fixed";
+      holder.style.left = "-10000px";
+      holder.style.top = "0";
+      holder.style.width = `${root.offsetWidth}px`;
+      holder.appendChild(node);
+      document.body.appendChild(holder);
+
+      // Dynamic import keeps html2pdf out of the main bundle (~350KB
+      // saved on initial page load; coaches hitting the Print button
+      // don't need it).
+      let blob: Blob;
+      try {
+        const html2pdfMod: { default: (...a: unknown[]) => any } = await import(
+          // @ts-expect-error — html2pdf.js ships without TS types
+          "html2pdf.js"
+        );
+        const html2pdf = html2pdfMod.default;
+        blob = await html2pdf()
+          .from(node)
+          .set({
+            margin: 0.4,
+            filename: buildFilename(player.display_name, sessionLabel),
+            image: { type: "jpeg", quality: 0.95 },
+            html2canvas: {
+              scale: 2,
+              useCORS: true,
+              backgroundColor: "#ffffff",
+            },
+            jsPDF: {
+              unit: "in",
+              format: "letter",
+              orientation: "portrait",
+            },
+            pagebreak: { mode: ["css", "legacy"] },
+          })
+          .outputPdf("blob");
+      } finally {
+        document.body.removeChild(holder);
+      }
+
+      setStatus("sending");
+      const pdfBase64 = await blobToBase64(blob);
+      const { sendRatingReportPdf } = await import("../lib/coachApi");
+      await sendRatingReportPdf({
+        sessionId,
+        playerId: player.id,
+        pdfBase64,
+        filename: buildFilename(player.display_name, sessionLabel),
+      });
+      setStatus("sent");
+      setMsg(`Sent to ${player.email}`);
+      setTimeout(() => setStatus("idle"), 4000);
+    } catch (e) {
+      setStatus("error");
+      setMsg((e as Error).message);
+    }
+  }
+
+  const disabled = status === "generating" || status === "sending";
+  const label =
+    status === "generating"
+      ? "Rendering PDF…"
+      : status === "sending"
+      ? "Sending…"
+      : status === "sent"
+      ? "✓ Sent"
+      : "📧 Send PDF to player";
+
+  return (
+    <>
+      <button
+        onClick={() => setShowConfirm(true)}
+        disabled={disabled}
+        title={`Email the current report as a PDF to ${player.email}`}
+        style={{
+          padding: "6px 14px",
+          fontSize: 12,
+          fontWeight: 600,
+          background: status === "sent" ? "#1e7e34" : "#fff",
+          color: status === "sent" ? "#fff" : "#1a73e8",
+          border: `1px solid ${status === "sent" ? "#1e7e34" : "#1a73e8"}`,
+          borderRadius: 6,
+          cursor: disabled ? "wait" : "pointer",
+          fontFamily: "inherit",
+          opacity: disabled ? 0.8 : 1,
+        }}
+      >
+        {label}
+      </button>
+      {status === "error" && msg && (
+        <div
+          className="prr-noprint"
+          style={{
+            position: "absolute",
+            right: 16,
+            top: 56,
+            padding: "6px 10px",
+            background: "#f8d7da",
+            color: "#721c24",
+            border: "1px solid #f5c6cb",
+            borderRadius: 4,
+            fontSize: 11,
+            maxWidth: 320,
+          }}
+        >
+          {msg}
+          <button
+            onClick={() => setStatus("idle")}
+            style={{
+              marginLeft: 8,
+              background: "transparent",
+              border: "none",
+              color: "#721c24",
+              cursor: "pointer",
+              fontWeight: 700,
+            }}
+          >
+            ×
+          </button>
+        </div>
+      )}
+      {showConfirm && (
+        <SendConfirmModal
+          player={player}
+          onCancel={() => setShowConfirm(false)}
+          onConfirm={doSend}
+        />
+      )}
+    </>
+  );
+}
+
+function SendConfirmModal({
+  player,
+  onCancel,
+  onConfirm,
+}: {
+  player: PlayerRow;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      onClick={onCancel}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.45)",
+        display: "grid",
+        placeItems: "center",
+        zIndex: 1000,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#fff",
+          borderRadius: 10,
+          padding: 20,
+          width: "min(420px, 92vw)",
+          boxShadow: "0 12px 32px rgba(0,0,0,0.25)",
+          fontFamily: "inherit",
+        }}
+      >
+        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#222" }}>
+          Send this report?
+        </h3>
+        <p style={{ margin: "10px 0 16px", fontSize: 13, color: "#555", lineHeight: 1.5 }}>
+          The current report will be rendered to a PDF and emailed as an
+          attachment to <b>{player.email}</b>. The delivery will show up in
+          the session's delivery log.
+        </p>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button
+            onClick={onCancel}
+            style={{
+              padding: "6px 14px",
+              fontSize: 13,
+              background: "#fff",
+              color: "#333",
+              border: "1px solid #ccc",
+              borderRadius: 5,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            autoFocus
+            style={{
+              padding: "6px 14px",
+              fontSize: 13,
+              fontWeight: 600,
+              background: "#1a73e8",
+              color: "#fff",
+              border: "1px solid #1a73e8",
+              borderRadius: 5,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            Send
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function buildFilename(playerName: string, sessionLabel: string | null): string {
+  const slug = playerName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const session = (sessionLabel ?? "session")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 30);
+  return `wmpc-rating-${slug}-${session}.pdf`;
+}
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      // FileReader returns a data URL; strip the `data:…;base64,` prefix.
+      resolve(result.replace(/^data:[^;]+;base64,/, ""));
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
 // ─────────────────────────── Empty state ───────────────────────────
 
 function EmptyState({ player }: { player: PlayerRow }) {
@@ -466,25 +749,63 @@ function EmptyState({ player }: { player: PlayerRow }) {
 
 // ─────────────────────────── Report body ───────────────────────────
 
+export interface PlayerRatingReportBodyProps {
+  player: PlayerRow;
+  report: PlayerRatingReport;
+  /** Rolling-window size. Ignored in session mode (sessionLabel != null). */
+  windowSize: number;
+  /** Non-null when this report is scoped to a single session — the
+   *  footer copy + body title reflect that. */
+  sessionLabel: string | null;
+  /** If provided, render this in place of the default "Skill ratings"
+   *  sparkline row. The player profile page uses this slot to inject
+   *  the six color-coded skill cards whose palette matches the
+   *  RatingsOverTime chart. */
+  skillRatingsSlot?: React.ReactNode;
+  /** Optional content to render between the Skill Ratings section and
+   *  the Key Stats section. The player profile page uses this slot for
+   *  Ratings Over Time, the Win-rate donuts, and Serve Speed — so the
+   *  embed can own the top/bottom of the layout while page-level
+   *  charts still slot in where they read best. */
+  afterSkillRatingsSlot?: React.ReactNode;
+}
+
+export function PlayerRatingReportBody(props: PlayerRatingReportBodyProps) {
+  return <ReportBody {...props} />;
+}
+
 function ReportBody({
   player,
   report,
   windowSize,
   sessionLabel,
-}: {
-  player: PlayerRow;
-  report: PlayerRatingReport;
-  windowSize: number;
-  sessionLabel: string | null;
-}) {
+  skillRatingsSlot,
+  afterSkillRatingsSlot,
+}: PlayerRatingReportBodyProps) {
   const n = report.perGame.length;
 
-  // Per-skill trend arrays (oldest → newest) for sparklines.
-  const chrono = [...report.perGame].sort(
-    (a, b) =>
-      new Date(a.game.played_at).getTime() -
-      new Date(b.game.played_at).getTime(),
-  );
+  // Comparator for per-game ordering. We sort by (date, gm-index)
+  // instead of raw played_at — PB Vision's per-game timestamps
+  // occasionally drift within a session, which used to produce
+  // sequences like "Game 6, 7, 2, 5". The date part orders
+  // cross-session; the gm-N index orders within a day. CLAUDE.md
+  // spells this rule out for the whole codebase.
+  const comparePerGame = (
+    a: (typeof report.perGame)[number],
+    b: (typeof report.perGame)[number],
+  ): number => {
+    const keyA = `${(a.game.played_at ?? "").slice(0, 10)}|${String(
+      extractGameIdx(a.game.session_name) ?? 0,
+    ).padStart(4, "0")}`;
+    const keyB = `${(b.game.played_at ?? "").slice(0, 10)}|${String(
+      extractGameIdx(b.game.session_name) ?? 0,
+    ).padStart(4, "0")}`;
+    return keyA.localeCompare(keyB);
+  };
+
+  // Per-skill trend arrays (oldest → newest) for sparklines — charts
+  // read left-to-right so chronological still makes sense here.
+  const chrono = [...report.perGame].sort(comparePerGame);
   const trendBySkill = {
     overall: chrono.map((p) => p.ratings.overall),
     serve: chrono.map((p) => p.ratings.serve),
@@ -494,6 +815,9 @@ function ReportBody({
     agility: chrono.map((p) => p.ratings.agility),
     consistency: chrono.map((p) => p.ratings.consistency),
   };
+  // Per-game cards render newest-first — flipping the chrono copy
+  // avoids a second sort.
+  const latestFirst = [...chrono].reverse();
 
   return (
     <div style={pageStyle}>
@@ -542,6 +866,18 @@ function ReportBody({
             <h1 style={{ margin: "2px 0 0", fontSize: 26, fontWeight: 700 }}>
               {player.display_name}
             </h1>
+            {player.email && (
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "#1a73e8",
+                  marginTop: 2,
+                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                }}
+              >
+                {player.email}
+              </div>
+            )}
             <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
               Generated {new Date().toLocaleDateString()} ·{" "}
               {sessionLabel
@@ -584,39 +920,49 @@ function ReportBody({
           : `All values below are averaged across this player's last ${n} games. As new games come in, older ones drop out of the window and the numbers refresh.`}
       </p>
 
-      {/* Skill ratings with sparklines */}
+      {/* Skill ratings — caller can inject their own block (e.g. the
+          profile page's color-coded cards) via `skillRatingsSlot`.
+          Default is the sparkline row that the standalone report uses. */}
       <Section title="Skill ratings">
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 10 }}>
-          <SkillStat
-            label="Overall"
-            value={report.ratings.overall}
-            trend={trendBySkill.overall}
-            emphasis
-          />
-          <SkillStat label="Serve" value={report.ratings.serve} trend={trendBySkill.serve} />
-          <SkillStat label="Return" value={report.ratings.return_} trend={trendBySkill.return_} />
-          <SkillStat
-            label="Offense"
-            value={report.ratings.offense}
-            trend={trendBySkill.offense}
-          />
-          <SkillStat
-            label="Defense"
-            value={report.ratings.defense}
-            trend={trendBySkill.defense}
-          />
-          <SkillStat
-            label="Agility"
-            value={report.ratings.agility}
-            trend={trendBySkill.agility}
-          />
-          <SkillStat
-            label="Consistency"
-            value={report.ratings.consistency}
-            trend={trendBySkill.consistency}
-          />
-        </div>
+        {skillRatingsSlot ?? (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 10 }}>
+            <SkillStat
+              label="Overall"
+              value={report.ratings.overall}
+              trend={trendBySkill.overall}
+              emphasis
+            />
+            <SkillStat label="Serve" value={report.ratings.serve} trend={trendBySkill.serve} />
+            <SkillStat label="Return" value={report.ratings.return_} trend={trendBySkill.return_} />
+            <SkillStat
+              label="Offense"
+              value={report.ratings.offense}
+              trend={trendBySkill.offense}
+            />
+            <SkillStat
+              label="Defense"
+              value={report.ratings.defense}
+              trend={trendBySkill.defense}
+            />
+            <SkillStat
+              label="Agility"
+              value={report.ratings.agility}
+              trend={trendBySkill.agility}
+            />
+            <SkillStat
+              label="Consistency"
+              value={report.ratings.consistency}
+              trend={trendBySkill.consistency}
+            />
+          </div>
+        )}
       </Section>
+
+      {/* Optional caller-provided content — profile page slots in
+          Ratings Over Time + Win-rate donuts + Serve Speed here, so
+          those page-level charts land between Skill Ratings and the
+          per-stat detail below. */}
+      {afterSkillRatingsSlot}
 
       {/* Key stats + charts */}
       <Section title="Key stats">
@@ -719,21 +1065,17 @@ function ReportBody({
         </Section>
       )}
 
-      {/* Overall trend */}
-      <Section title="Rating trend">
-        <div style={chartCardStyle}>
-          <TrendChart
-            samples={report.trend}
-            title={`Overall — last ${n} ${n === 1 ? "game" : "games"}`}
-            width={900}
-          />
-        </div>
-      </Section>
+      {/* Rating-trend line chart removed — the per-skill sparklines in
+          the Skill Ratings block and the RatingsOverTime chart on the
+          player profile already cover trend visualization. */}
 
-      {/* Per-game cards */}
+      {/* Per-game cards — newest first, with `gm-N` as a tiebreaker
+          when same-session games share a timestamp. Coach told us
+          they read latest-first on this list (trend charts above
+          still go oldest→newest). */}
       <Section title={`Last ${n} ${n === 1 ? "game" : "games"}`}>
         <div style={{ display: "grid", gap: 8, pageBreakBefore: "auto" }}>
-          {report.perGame.map((p) => (
+          {latestFirst.map((p) => (
             <PerGameCard key={p.game.id} snap={p} />
           ))}
         </div>
@@ -758,7 +1100,7 @@ function PerGameCard({
   snap: PlayerRatingReport["perGame"][number];
 }) {
   const { game, ratings, stats, wentWell, workOn } = snap;
-  const label = game.session_name ?? game.pbvision_video_id;
+  const label = prettyGameLabel(game.session_name, game.pbvision_video_id);
   return (
     <div style={perGameCardStyle}>
       <div
@@ -774,6 +1116,33 @@ function PerGameCard({
         <span style={{ color: "#888", fontSize: 12 }}>
           {new Date(game.played_at).toLocaleDateString()}
         </span>
+        {/* Subtle "with partner · vs opponent1 & opponent2" line.
+            Only shown when the embed supplied roster info. We use
+            first-names to keep the header short. */}
+        {(game.partnerName || (game.opponentNames && game.opponentNames.length > 0)) && (
+          <span
+            style={{
+              color: "#9a9a9a",
+              fontSize: 11,
+              fontStyle: "italic",
+              marginLeft: 2,
+            }}
+          >
+            {game.partnerName && (
+              <>
+                with <span style={{ color: "#666" }}>{firstName(game.partnerName)}</span>
+              </>
+            )}
+            {game.opponentNames && game.opponentNames.length > 0 && (
+              <>
+                {game.partnerName ? " · " : ""}vs{" "}
+                <span style={{ color: "#666" }}>
+                  {game.opponentNames.map(firstName).join(" & ")}
+                </span>
+              </>
+            )}
+          </span>
+        )}
         <span style={{ flex: 1 }} />
         <span
           style={{
@@ -1230,6 +1599,38 @@ const footerStyle: React.CSSProperties = {
   color: "#888",
   textAlign: "center",
 };
+
+// Extract a game index from a session_name. Two formats are in the
+// wild:
+//   "cg-gw-rw-jn-2026-04-20-gm-2"  — raw PBV session name (gm-N suffix)
+//   "Game 06"                      — pretty label that some import
+//                                     paths store directly
+// Returns null when neither pattern matches so the caller can fall
+// back cleanly.
+function extractGameIdx(sessionName: string | null | undefined): number | null {
+  if (!sessionName) return null;
+  const gm = sessionName.match(/gm-(\d+)/i);
+  if (gm) return parseInt(gm[1], 10);
+  const game = sessionName.match(/\bGame\s+0*(\d+)/i);
+  if (game) return parseInt(game[1], 10);
+  return null;
+}
+
+// Display label for a game card. Normalizes both formats above so we
+// never show "cg-gw-rw-jn-2026-04-20-gm-2" to a player.
+function prettyGameLabel(
+  sessionName: string | null | undefined,
+  fallback: string,
+): string {
+  if (!sessionName) return fallback;
+  const idx = extractGameIdx(sessionName);
+  if (idx != null) return `Game ${String(idx).padStart(2, "0")}`;
+  return sessionName;
+}
+
+function firstName(full: string): string {
+  return full.split(" ")[0] ?? full;
+}
 
 function PrintStyles() {
   return (

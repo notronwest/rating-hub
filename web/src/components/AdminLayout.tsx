@@ -3,10 +3,12 @@ import PlayerContextBar from "./PlayerContextBar";
 import { useAuth } from "../auth/AuthProvider";
 import { useIsCoach } from "../auth/useOrgRole";
 
+// `import` link was dropped from the nav — the PB Vision webhook +
+// session-manager push handles ingestion automatically now. The route
+// itself stays in App.tsx so any bookmarked links still work.
 const BASE_NAV = [
   { to: "players", label: "Players" },
   { to: "sessions", label: "Sessions" },
-  { to: "import", label: "Import" },
 ];
 
 export default function AdminLayout() {
@@ -14,8 +16,12 @@ export default function AdminLayout() {
   const { user, signOut } = useAuth();
   const isCoach = useIsCoach(orgId);
 
+  // Coach-only additions: the Coach dashboard + Email history (the
+  // latter exposes player email addresses + delivery log, so org-
+  // member-only is the right scope even though the RLS policy would
+  // also allow it).
   const navItems = isCoach
-    ? [...BASE_NAV, { to: "coach", label: "Coach" }]
+    ? [...BASE_NAV, { to: "coach", label: "Coach" }, { to: "emails", label: "Emails" }]
     : BASE_NAV;
 
   return (

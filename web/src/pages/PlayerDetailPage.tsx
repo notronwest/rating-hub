@@ -7,10 +7,14 @@ import WinRateDonut from "../components/charts/WinRateDonut";
 import ShotTypeDonut from "../components/charts/ShotTypeDonut";
 import PlayStyleGauge from "../components/charts/PlayStyleGauge";
 import ServeSpeedHistogram from "../components/charts/ServeSpeedHistogram";
-import DepthDonut from "../components/charts/DepthDonut";
-import KitchenArrivalBars, { buildKitchenData } from "../components/charts/KitchenArrivalBars";
-import CoachFeedback from "../components/CoachFeedback";
+import PlayerRatingReportEmbed from "../components/report/PlayerRatingReportEmbed";
+import SendRatingReportPdfButton from "../components/report/SendRatingReportPdfButton";
 
+// Colored "Skill Ratings" cards restored from the earlier profile
+// layout. Colors intentionally match the RatingsOverTime chart below so
+// a reader can visually tie a card (e.g. orange Serve) to its line on
+// the trend chart. The Overall rating is rendered separately in a
+// bigger format beside the cards.
 const RATING_CARDS: { key: string; label: string; color: string }[] = [
   { key: "serve", label: "Serve", color: "#e8710a" },
   { key: "return", label: "Return", color: "#0d904f" },
@@ -19,22 +23,6 @@ const RATING_CARDS: { key: string; label: string; color: string }[] = [
   { key: "agility", label: "Agility", color: "#00bcd4" },
   { key: "consistency", label: "Consistency", color: "#e91e90" },
 ];
-
-interface GameHistoryRow {
-  game_id: string;
-  pbvision_video_id: string;
-  session_name: string | null;
-  played_at: string | null;
-  team: number;
-  won: boolean | null;
-  team0_score: number | null;
-  team1_score: number | null;
-  rating_overall: number | null;
-  shot_count: number | null;
-  session_id: string | null;
-  session_label: string | null;
-  session_played_date: string | null;
-}
 
 interface GamePlayerStats {
   played_at: string | null;
@@ -54,10 +42,21 @@ export default function PlayerDetailPage() {
   const [player, setPlayer] = useState<Player | null>(null);
   const [agg, setAgg] = useState<PlayerAggregate | null>(null);
   const [ratingSnapshots, setRatingSnapshots] = useState<RatingSnapshot[]>([]);
-  const [games, setGames] = useState<GameHistoryRow[]>([]);
   const [gameStats, setGameStats] = useState<GamePlayerStats[]>([]);
+  const [recentStats, setRecentStats] = useState<{
+    recentWon: number;
+    recentTotal: number;
+  }>({ recentWon: 0, recentTotal: 0 });
+  // Return-speed distribution, computed from rally_shots (PBV doesn't
+  // export an aggregated return_speed_dist on game_players the way it
+  // does for serve). Same 17-bucket shape as serve_speed_dist so the
+  // existing histogram component renders it directly.
+  const [returnSpeedDist, setReturnSpeedDist] = useState<number[] | null>(null);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<ViewMode>("sessions");
+  // Sliding-window size for the embedded rating report. Matches the
+  // options on the standalone /rating-report page.
+  const [windowSize, setWindowSize] = useState<number>(6);
+  const WINDOW_OPTIONS = [3, 6, 10, 20];
 
   useEffect(() => {
     if (!orgId || !slug) return;
@@ -79,6 +78,10 @@ export default function PlayerDetailPage() {
       if (!p) { setLoading(false); return; }
       setPlayer(p);
 
+      // We still need the 10-most-recent win/loss slice for the Games Won
+      // donut (the embed only covers the last 6 games so it doesn't
+      // replace that stat). `histRes` is a lighter query than before —
+      // just won + played_at.
       const [aggRes, snapshotRes, histRes, statsRes] = await Promise.all([
         supabase
           .from("player_aggregates")
@@ -92,16 +95,10 @@ export default function PlayerDetailPage() {
           .order("played_at", { ascending: true }),
         supabase
           .from("game_players")
-          .select(`
-            game_id, team, won, rating_overall, shot_count,
-            games!inner (
-              id, pbvision_video_id, session_name, played_at,
-              team0_score, team1_score, session_id,
-              sessions ( id, label, played_date )
-            )
-          `)
+          .select("won, games!inner(played_at)")
           .eq("player_id", p.id)
-          .order("created_at", { ascending: false }),
+          .order("created_at", { ascending: false })
+          .limit(10),
         supabase
           .from("game_players")
           .select(`
@@ -116,33 +113,11 @@ export default function PlayerDetailPage() {
       setAgg(aggRes.data);
       setRatingSnapshots(snapshotRes.data ?? []);
 
-      // Flatten game history
-      const rows: GameHistoryRow[] = (histRes.data ?? []).map((gp: Record<string, unknown>) => {
-        const g = gp.games as Record<string, unknown>;
-        const s = g?.sessions as Record<string, unknown> | null;
-        return {
-          game_id: g?.id as string,
-          pbvision_video_id: g?.pbvision_video_id as string,
-          session_name: g?.session_name as string | null,
-          played_at: g?.played_at as string | null,
-          team: gp.team as number,
-          won: gp.won as boolean | null,
-          team0_score: g?.team0_score as number | null,
-          team1_score: g?.team1_score as number | null,
-          rating_overall: gp.rating_overall as number | null,
-          shot_count: gp.shot_count as number | null,
-          session_id: g?.session_id as string | null,
-          session_label: s?.label as string | null,
-          session_played_date: s?.played_date as string | null,
-        };
+      const recentRows = (histRes.data ?? []) as Array<{ won: boolean | null }>;
+      setRecentStats({
+        recentWon: recentRows.filter((r) => r.won === true).length,
+        recentTotal: recentRows.length,
       });
-      rows.sort((a, b) => {
-        if (!a.played_at && !b.played_at) return 0;
-        if (!a.played_at) return 1;
-        if (!b.played_at) return -1;
-        return b.played_at.localeCompare(a.played_at);
-      });
-      setGames(rows);
 
       // Flatten game stats for charts
       const stats: GamePlayerStats[] = (statsRes.data ?? []).map((gp: Record<string, unknown>) => {
@@ -159,6 +134,49 @@ export default function PlayerDetailPage() {
         };
       });
       setGameStats(stats);
+
+      // ── Return speed distribution ──
+      // PBV doesn't expose a game_players.return_speed_dist, so we
+      // derive it from rally_shots. For each game the player played,
+      // remember the player_index (it varies per game) — then pull
+      // this player's return shots and bucket their mph into the same
+      // 17-wide buckets the serve histogram uses.
+      const { data: gpIndices } = await supabase
+        .from("game_players")
+        .select("game_id, player_index")
+        .eq("player_id", p.id);
+      const indexByGame = new Map<string, number>(
+        (gpIndices ?? []).map((g: Record<string, unknown>) => [
+          g.game_id as string,
+          g.player_index as number,
+        ]),
+      );
+      if (indexByGame.size > 0) {
+        const gameIds = Array.from(indexByGame.keys());
+        // Two filters: shot_type='return' AND rally_shots belonging to
+        // one of this player's games. speed_mph is nullable, so we
+        // skip nulls client-side (Supabase has no compound "not null"
+        // filter on foreign keys worth the complexity here).
+        const { data: returnShots } = await supabase
+          .from("rally_shots")
+          .select("speed_mph, player_index, rallies!inner(game_id)")
+          .eq("shot_type", "return")
+          .in("rallies.game_id", gameIds);
+        const speeds: number[] = ((returnShots ?? []) as Array<{
+          speed_mph: number | null;
+          player_index: number | null;
+          rallies: { game_id: string };
+        }>)
+          .filter((r) => {
+            if (r.speed_mph == null || r.player_index == null) return false;
+            // player_index varies per game — only keep shots that this
+            // player actually hit.
+            return indexByGame.get(r.rallies.game_id) === r.player_index;
+          })
+          .map((r) => r.speed_mph as number);
+        setReturnSpeedDist(speeds.length > 0 ? bucketSpeeds(speeds) : null);
+      }
+
       setLoading(false);
     })();
   }, [orgId, slug]);
@@ -166,342 +184,263 @@ export default function PlayerDetailPage() {
   if (loading) return <p>Loading…</p>;
   if (!player) return <p>Player not found.</p>;
 
-  // Aggregate stats across all games for charts
+  // Aggregate stats for the kept chart blocks. Depth + kitchen-bar
+  // aggregates were removed when those sections moved to the embedded
+  // rating report.
   const avgShotSelection = aggregateAvg(gameStats.map((g) => g.shot_selection));
-  const avgServeDepth = aggregateAvg(gameStats.map((g) => g.serve_depth));
-  const avgReturnDepth = aggregateAvg(gameStats.map((g) => g.return_depth));
   const avgServeSpeed = aggregateSpeedDist(gameStats.map((g) => g.serve_speed_dist));
   const totalRallies = gameStats.reduce((s, g) => s + (g.num_rallies ?? 0), 0);
   const totalRalliesWon = gameStats.reduce((s, g) => s + (g.num_rallies_won ?? 0), 0);
 
-  // Recent = last 10 games
-  const recentGames = games.slice(0, 10);
-  const recentWon = recentGames.filter((g) => g.won).length;
-
-  // Kitchen arrival data for bar charts
-  const kitchenData = buildKitchenData(gameStats);
-
-  // Session grouping
-  const sessionGroups: { sessionId: string; label: string; playedDate: string | null; games: GameHistoryRow[] }[] = [];
-  if (view === "sessions") {
-    const map = new Map<string, { label: string; playedDate: string | null; games: GameHistoryRow[] }>();
-    for (const g of games) {
-      const key = g.session_id ?? `ungrouped-${g.game_id}`;
-      if (!map.has(key)) {
-        map.set(key, {
-          label: g.session_label ?? "Session",
-          playedDate: g.session_played_date ?? g.played_at?.slice(0, 10) ?? null,
-          games: [],
-        });
-      }
-      map.get(key)!.games.push(g);
-    }
-    for (const [sessionId, group] of map) {
-      sessionGroups.push({
-        sessionId: sessionId.startsWith("ungrouped-") ? "" : sessionId,
-        ...group,
-      });
-    }
-  }
-
-  const toggleStyle = (active: boolean): React.CSSProperties => ({
-    padding: "6px 14px",
-    fontSize: 13,
-    fontWeight: active ? 600 : 400,
-    borderTop: active ? "1px solid #1a73e8" : "1px solid #ddd",
-    borderBottom: active ? "1px solid #1a73e8" : "1px solid #ddd",
-    borderRight: active ? "1px solid #1a73e8" : "1px solid #ddd",
-    borderLeft: active ? "1px solid #1a73e8" : "1px solid #ddd",
-    background: active ? "#e8f0fe" : "#fff",
-    color: active ? "#1a73e8" : "#555",
-    cursor: "pointer",
-  });
+  // Match the Ratings Over Time chart to the selected window. The raw
+  // snapshots are already in ascending chronological order; take the
+  // trailing `windowSize` entries so the chart scopes to the same
+  // games as the Skill Ratings + Rating Report below. When a player
+  // has fewer snapshots than the window, we just show what's there.
+  const windowedSnapshots =
+    ratingSnapshots.length > windowSize
+      ? ratingSnapshots.slice(-windowSize)
+      : ratingSnapshots;
 
   return (
     <div style={{ maxWidth: 960 }}>
-      {/* ── Header ── */}
-      <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 28 }}>
-        {/* Left: name + meta */}
-        <div style={{ flex: "1 1 300px" }}>
-          <h2 style={{ fontSize: 26, fontWeight: 700, marginBottom: 4, marginTop: 0 }}>
-            {player.display_name}
-          </h2>
-          <div style={{ fontSize: 14, color: "#666", marginBottom: 8 }}>
-            {agg ? `${agg.games_played} games` : ""}
-          </div>
-          <Link
-            to={`/org/${orgId}/players/${player.slug}/rating-report`}
-            style={{
-              display: "inline-block",
-              padding: "6px 12px",
-              fontSize: 12,
-              fontWeight: 600,
-              background: "#1a73e8",
-              color: "#fff",
-              border: "1px solid #1a73e8",
-              borderRadius: 6,
-              textDecoration: "none",
-              fontFamily: "inherit",
-            }}
-          >
-            📄 Rating report
-          </Link>
-        </div>
-
-        {/* Center: overall rating */}
-        {agg?.latest_rating_overall && (
-          <div style={{ textAlign: "center", minWidth: 120 }}>
-            <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: 1 }}>
-              Overall Rating
-            </div>
-            <div style={{ fontSize: 48, fontWeight: 800, color: "#1a73e8", lineHeight: 1.1 }}>
-              {agg.latest_rating_overall.toFixed(2)}
-            </div>
-          </div>
-        )}
-
-        {/* Right: 6 rating cards */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, flex: "0 0 auto" }}>
-          {RATING_CARDS.map(({ key, label, color }) => {
-            const val = agg?.[`latest_rating_${key}` as keyof PlayerAggregate] as number | null;
+      {/* ── Page nav ── The SendRatingReportPdfButton captures the whole
+            `.ppd-page` container below (embed + kept stat blocks), so
+            what the coach sees is what the player gets. ── */}
+      <div
+        className="ppd-noprint"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          marginBottom: 14,
+          flexWrap: "wrap",
+        }}
+      >
+        <Link
+          to={`/org/${orgId}/players`}
+          style={{ fontSize: 12, color: "#1a73e8", textDecoration: "none" }}
+        >
+          ← All players
+        </Link>
+        <span style={{ flex: 1 }} />
+        {/* Window-size toggle — picks how many of the most recent
+            games feed the rating report. Default 6 matches the PDF
+            the club has historically distributed. */}
+        <span style={{ fontSize: 11, color: "#888" }}>Window:</span>
+        <div
+          style={{
+            display: "inline-flex",
+            border: "1px solid #e2e2e2",
+            borderRadius: 6,
+            overflow: "hidden",
+          }}
+        >
+          {WINDOW_OPTIONS.map((n) => {
+            const active = n === windowSize;
             return (
-              <div
-                key={key}
+              <button
+                key={n}
+                onClick={() => setWindowSize(n)}
                 style={{
-                  padding: "8px 14px",
-                  borderRadius: 8,
-                  background: color + "18",
-                  borderLeft: `3px solid ${color}`,
-                  minWidth: 90,
-                  textAlign: "center",
+                  padding: "5px 10px",
+                  fontSize: 12,
+                  fontWeight: active ? 700 : 500,
+                  background: active ? "#1a73e8" : "#fff",
+                  color: active ? "#fff" : "#333",
+                  border: "none",
+                  borderRight: "1px solid #e2e2e2",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
                 }}
               >
-                <div style={{ fontSize: 10, color: "#888", textTransform: "uppercase" }}>{label}</div>
-                <div style={{ fontSize: 18, fontWeight: 700, color }}>{val?.toFixed(2) ?? "—"}</div>
-              </div>
+                {n}
+              </button>
             );
           })}
         </div>
-      </div>
-
-      {/* ── Coach Feedback (only renders if there's any) ── */}
-      <CoachFeedback playerId={player.id} orgId={orgId ?? ""} />
-
-      {/* ── Ratings Over Time ── */}
-      <div style={{ marginBottom: 28 }}>
-        <RatingsOverTime data={ratingSnapshots} />
-      </div>
-
-      {/* ── Player Overview: Win rates + Play Style + Shot Type ── */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-          gap: 20,
-          marginBottom: 28,
-          background: "#f8f9fa",
-          border: "1px solid #e2e2e2",
-          borderRadius: 12,
-          padding: 20,
-        }}
-      >
-        {agg && (
-          <WinRateDonut
-            title="Games Won"
-            won={agg.games_won}
-            total={agg.games_played}
-            recentWon={recentWon}
-            recentTotal={recentGames.length}
-          />
-        )}
-        {totalRallies > 0 && (
-          <WinRateDonut
-            title="Rallies Won"
-            won={totalRalliesWon}
-            total={totalRallies}
-          />
-        )}
-        {avgShotSelection && <PlayStyleGauge shotSelection={avgShotSelection} />}
-        {avgShotSelection && <ShotTypeDonut shotSelection={avgShotSelection} />}
-      </div>
-
-      {/* ── Serve Speed ── */}
-      {avgServeSpeed && (
-        <div style={{ marginBottom: 28 }}>
-          <ServeSpeedHistogram distribution={avgServeSpeed} />
-        </div>
-      )}
-
-      {/* ── Depth charts ── */}
-      {(avgServeDepth || avgReturnDepth) && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 28 }}>
-          {avgServeDepth && (
-            <div style={{ background: "#fff", border: "1px solid #e2e2e2", borderRadius: 12, padding: 20 }}>
-              <DepthDonut title="Serve Depth" depth={avgServeDepth} />
-            </div>
-          )}
-          {avgReturnDepth && (
-            <div style={{ background: "#fff", border: "1px solid #e2e2e2", borderRadius: 12, padding: 20 }}>
-              <DepthDonut title="Return Depth" depth={avgReturnDepth} />
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Kitchen Arrival ── */}
-      {kitchenData.length > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 28 }}>
-          <KitchenArrivalBars title="Serving Kitchen Arrival %" side="serving" data={kitchenData} />
-          <KitchenArrivalBars title="Returning Kitchen Arrival %" side="receiving" data={kitchenData} />
-        </div>
-      )}
-
-      {/* ── Game History ── */}
-      <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 16, marginTop: 8 }}>
         <button
-          onClick={() => setView("sessions")}
-          style={{ ...toggleStyle(view === "sessions"), borderRadius: "6px 0 0 6px" }}
+          onClick={() => window.print()}
+          style={{
+            padding: "5px 12px",
+            fontSize: 12,
+            fontWeight: 600,
+            background: "#fff",
+            color: "#1a73e8",
+            border: "1px solid #1a73e8",
+            borderRadius: 6,
+            cursor: "pointer",
+            fontFamily: "inherit",
+          }}
         >
-          Sessions
+          🖨 Print / Save as PDF
         </button>
-        <button
-          onClick={() => setView("games")}
-          style={{ ...toggleStyle(view === "games"), borderRadius: "0 6px 6px 0", borderLeftWidth: 0 }}
-        >
-          All Games
-        </button>
+        <SendRatingReportPdfButton
+          targetSelector=".ppd-page"
+          playerId={player.id}
+          playerEmail={player.email}
+          playerDisplayName={player.display_name}
+        />
       </div>
 
-      {games.length === 0 ? (
-        <p style={{ color: "#999" }}>No games found.</p>
-      ) : view === "sessions" ? (
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr>
-              {["Date", "Session", "Games", "Record"].map((h) => (
-                <th
-                  key={h}
-                  style={{
-                    padding: "10px 12px",
-                    textAlign: h === "Games" || h === "Record" ? "center" : "left",
-                    fontSize: 12, fontWeight: 600, color: "#666",
-                    textTransform: "uppercase", letterSpacing: 0.5,
-                    borderBottom: "2px solid #eee",
-                  }}
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {sessionGroups.map((sg) => {
-              const wins = sg.games.filter((g) => g.won === true).length;
-              const losses = sg.games.filter((g) => g.won === false).length;
-              return (
-                <tr
-                  key={sg.sessionId || sg.games[0]?.game_id}
-                  style={{ transition: "background 0.1s" }}
-                  onMouseOver={(e) => (e.currentTarget.style.background = "#f8f9fa")}
-                  onMouseOut={(e) => (e.currentTarget.style.background = "transparent")}
-                >
-                  <td style={{ padding: "10px 12px", borderBottom: "1px solid #f0f0f0", fontSize: 13, color: "#666", whiteSpace: "nowrap" }}>
-                    {sg.playedDate
-                      ? new Date(sg.playedDate + "T12:00:00").toLocaleDateString(undefined, {
-                          weekday: "short", month: "short", day: "numeric", year: "numeric",
-                        })
-                      : "—"}
-                  </td>
-                  <td style={{ padding: "10px 12px", borderBottom: "1px solid #f0f0f0", fontSize: 14 }}>
-                    {sg.sessionId ? (
-                      <Link
-                        to={`/org/${orgId}/sessions/${sg.sessionId}?from=player&slug=${slug}`}
-                        style={{ color: "#1a73e8", textDecoration: "none", fontWeight: 500 }}
-                      >
-                        {sg.label}
-                      </Link>
-                    ) : (
-                      <span style={{ color: "#333", fontWeight: 500 }}>{sg.label}</span>
-                    )}
-                  </td>
-                  <td style={{ padding: "10px 12px", borderBottom: "1px solid #f0f0f0", textAlign: "center", fontWeight: 600 }}>
-                    {sg.games.length}
-                  </td>
-                  <td style={{ padding: "10px 12px", borderBottom: "1px solid #f0f0f0", textAlign: "center" }}>
-                    <span style={{ color: "#1e7e34", fontWeight: 600 }}>{wins}W</span>
-                    <span style={{ color: "#999", margin: "0 4px" }}>–</span>
-                    <span style={{ color: "#c62828", fontWeight: 600 }}>{losses}L</span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      ) : (
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr>
-              {["Date", "Game", "Score", "W/L", "Rating", "Shots"].map((h) => (
-                <th
-                  key={h}
-                  style={{
-                    padding: "8px 12px",
-                    textAlign: h === "Date" || h === "Game" ? "left" : "right",
-                    fontSize: 12, fontWeight: 600, color: "#666",
-                    textTransform: "uppercase", letterSpacing: 0.5,
-                    borderBottom: "2px solid #eee",
-                  }}
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {games.map((g) => (
-              <tr
-                key={g.game_id}
-                style={{ transition: "background 0.1s" }}
-                onMouseOver={(e) => (e.currentTarget.style.background = "#f8f9fa")}
-                onMouseOut={(e) => (e.currentTarget.style.background = "transparent")}
-              >
-                <td style={{ padding: "8px 12px", borderBottom: "1px solid #f0f0f0", fontSize: 13, color: "#666" }}>
-                  {g.played_at ? new Date(g.played_at).toLocaleDateString() : "—"}
-                </td>
-                <td style={{ padding: "8px 12px", borderBottom: "1px solid #f0f0f0" }}>
-                  <Link
-                    to={`/org/${orgId}/games/${g.game_id}?from=player&slug=${slug}`}
-                    style={{ color: "#1a73e8", textDecoration: "none", fontSize: 14 }}
-                  >
-                    {g.session_name || g.pbvision_video_id}
-                  </Link>
-                </td>
-                <td style={{ padding: "8px 12px", borderBottom: "1px solid #f0f0f0", textAlign: "right", fontSize: 14 }}>
-                  {g.team0_score != null && g.team1_score != null ? `${g.team0_score}–${g.team1_score}` : "—"}
-                </td>
-                <td style={{ padding: "8px 12px", borderBottom: "1px solid #f0f0f0", textAlign: "right" }}>
-                  <span
+      {/* ── ppd-page: the PDF capture target.
+            The embed owns the layout end-to-end now. We inject the
+            color-coded Skill Ratings cards via `skillRatingsSlot`
+            (replaces the default sparkline row) and the kept
+            page-level charts via `afterSkillRatingsSlot` so they
+            land between Skill Ratings and the Key Stats block. ── */}
+      <div className="ppd-page">
+        <PlayerRatingReportEmbed
+          playerId={player.id}
+          windowSize={windowSize}
+          skillRatingsSlot={
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(6, 1fr)",
+                gap: 10,
+              }}
+            >
+              {RATING_CARDS.map(({ key, label, color }) => {
+                const val = agg?.[
+                  `latest_rating_${key}` as keyof PlayerAggregate
+                ] as number | null;
+                return (
+                  <div
+                    key={key}
                     style={{
-                      display: "inline-block", padding: "2px 8px", borderRadius: 4,
-                      fontSize: 12, fontWeight: 600,
-                      background: g.won ? "#e6f4ea" : "#fce8e6",
-                      color: g.won ? "#1e7e34" : "#c62828",
+                      padding: "10px 14px",
+                      borderRadius: 8,
+                      background: color + "18",
+                      borderLeft: `3px solid ${color}`,
+                      textAlign: "center",
                     }}
                   >
-                    {g.won ? "W" : "L"}
-                  </span>
-                </td>
-                <td style={{ padding: "8px 12px", borderBottom: "1px solid #f0f0f0", textAlign: "right", fontWeight: 600, fontSize: 14 }}>
-                  {g.rating_overall?.toFixed(2) ?? "—"}
-                </td>
-                <td style={{ padding: "8px 12px", borderBottom: "1px solid #f0f0f0", textAlign: "right", fontSize: 13, color: "#666" }}>
-                  {g.shot_count ?? "—"}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+                    <div
+                      style={{
+                        fontSize: 10,
+                        color: "#888",
+                        textTransform: "uppercase",
+                        letterSpacing: 0.5,
+                        fontWeight: 700,
+                      }}
+                    >
+                      {label}
+                    </div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color }}>
+                      {val?.toFixed(2) ?? "—"}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          }
+          afterSkillRatingsSlot={
+            <>
+              {/* Ratings Over Time — same color palette as the cards
+                  above so lines visually tie back. */}
+              <div style={{ marginBottom: 28 }}>
+                <RatingsOverTime data={windowedSnapshots} />
+              </div>
+
+              {/* Player Overview: Win rates + Play Style + Shot Type.
+                  Fixed 4-column grid so at PDF letter width all four
+                  donuts fit in one row — `auto-fit` was wrapping Shot
+                  Type onto a second row which put a page break
+                  between its heading and its chart. The outer block
+                  AND each chart both carry break-inside:avoid so
+                  html2pdf keeps the whole thing on one page. */}
+              <div
+                className="ppd-overview-grid"
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                  gap: 12,
+                  marginBottom: 28,
+                  background: "#f8f9fa",
+                  border: "1px solid #e2e2e2",
+                  borderRadius: 12,
+                  padding: 16,
+                  breakInside: "avoid",
+                  pageBreakInside: "avoid",
+                }}
+              >
+                {agg && (
+                  <div style={{ breakInside: "avoid", pageBreakInside: "avoid" }}>
+                    <WinRateDonut
+                      title="Games Won"
+                      won={agg.games_won}
+                      total={agg.games_played}
+                      recentWon={recentStats.recentWon}
+                      recentTotal={recentStats.recentTotal}
+                    />
+                  </div>
+                )}
+                {totalRallies > 0 && (
+                  <div style={{ breakInside: "avoid", pageBreakInside: "avoid" }}>
+                    <WinRateDonut
+                      title="Rallies Won"
+                      won={totalRalliesWon}
+                      total={totalRallies}
+                    />
+                  </div>
+                )}
+                {avgShotSelection && (
+                  <div style={{ breakInside: "avoid", pageBreakInside: "avoid" }}>
+                    <PlayStyleGauge shotSelection={avgShotSelection} />
+                  </div>
+                )}
+                {avgShotSelection && (
+                  <div style={{ breakInside: "avoid", pageBreakInside: "avoid" }}>
+                    <ShotTypeDonut shotSelection={avgShotSelection} />
+                  </div>
+                )}
+              </div>
+
+              {/* Serve Speed + Return Speed, side by side. Serve uses
+                  PBV's pre-bucketed distribution; Return is bucketed
+                  client-side from rally_shots since PBV doesn't emit
+                  an aggregated return distribution. One column falls
+                  back to full width if the other side is empty. */}
+              {(avgServeSpeed || returnSpeedDist) && (
+                <div
+                  className="ppd-speed-grid"
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      avgServeSpeed && returnSpeedDist ? "1fr 1fr" : "1fr",
+                    gap: 20,
+                    marginBottom: 28,
+                    // Keep both speed histograms on one page together.
+                    // Individually each card has break-inside: avoid,
+                    // but the grid wasn't atomic — which caused the
+                    // Serve card's title to end up on a different page
+                    // from its chart body when the earlier content
+                    // pushed it over a boundary.
+                    breakInside: "avoid",
+                    pageBreakInside: "avoid",
+                  }}
+                >
+                  {avgServeSpeed && (
+                    <ServeSpeedHistogram
+                      distribution={avgServeSpeed}
+                      title="Serve Speed"
+                      color="#5e35b1"
+                    />
+                  )}
+                  {returnSpeedDist && (
+                    <ServeSpeedHistogram
+                      distribution={returnSpeedDist}
+                      title="Return Speed"
+                      color="#0d904f"
+                    />
+                  )}
+                </div>
+              )}
+            </>
+          }
+        />
+      </div>
     </div>
   );
 }
@@ -544,4 +483,25 @@ function aggregateSpeedDist(
     result[i] /= valid.length;
   }
   return result;
+}
+
+// Bucket a flat list of mph values into the same 17-bin distribution
+// shape PBV uses for serve_speed_dist. Makes the values directly
+// renderable by ServeSpeedHistogram. Bucket boundaries:
+//   0: < 15,     1..14: 15–17.5, 17.5–20, …, 47.5–50,
+//   15: 50–55,   16: ≥ 55.
+function bucketSpeeds(speeds: number[]): number[] {
+  const buckets = new Array(17).fill(0);
+  for (const s of speeds) {
+    if (s < 15) buckets[0]++;
+    else if (s >= 55) buckets[16]++;
+    else if (s >= 50) buckets[15]++;
+    else {
+      const idx = 1 + Math.floor((s - 15) / 2.5);
+      buckets[Math.max(1, Math.min(14, idx))]++;
+    }
+  }
+  const total = speeds.length;
+  if (total === 0) return buckets;
+  return buckets.map((b) => b / total);
 }

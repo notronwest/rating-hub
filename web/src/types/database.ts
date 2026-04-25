@@ -15,6 +15,8 @@ export interface Player {
   display_name: string;
   pbvision_names: string[];
   avatar_url: string | null;
+  // Added in migration 006 — nullable; used for rating-report emails.
+  email: string | null;
   is_active: boolean;
   is_public: boolean;
   created_at: string;

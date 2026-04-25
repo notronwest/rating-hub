@@ -17,9 +17,20 @@ const SPEED_LABELS = [
 interface Props {
   /** Array of 17 values (0-1) representing percentage in each speed bucket, aggregated across games */
   distribution: number[];
+  /** Header shown above the chart. Defaults to "Serve Speed" so existing
+   *  callers don't need to change. Return Speed uses "Return Speed" here. */
+  title?: string;
+  /** Bar color. Defaults to neutral gray (serve). Return charts pass a
+   *  different accent so the two side-by-side readers can tell them
+   *  apart at a glance. */
+  color?: string;
 }
 
-export default function ServeSpeedHistogram({ distribution }: Props) {
+export default function ServeSpeedHistogram({
+  distribution,
+  title = "Serve Speed",
+  color = "#bdbdbd",
+}: Props) {
   if (!distribution || distribution.length === 0) return null;
 
   const data = SPEED_LABELS.map((label, i) => ({
@@ -31,9 +42,23 @@ export default function ServeSpeedHistogram({ distribution }: Props) {
   if (maxPct === 0) return null;
 
   return (
-    <div style={{ background: "#fff", border: "1px solid #e2e2e2", borderRadius: 12, padding: "20px 20px 12px" }}>
+    <div
+      className="speed-histogram-card"
+      style={{
+        background: "#fff",
+        border: "1px solid #e2e2e2",
+        borderRadius: 12,
+        // Extra bottom padding so the descender on "mph" isn't clipped
+        // when the PDF renderer uses a slightly smaller line-box than
+        // the browser. Top/sides stay tight.
+        padding: "20px 20px 20px",
+        // Keep title + chart on the same page when rendered to PDF.
+        breakInside: "avoid",
+        pageBreakInside: "avoid",
+      }}
+    >
       <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16, marginTop: 0 }}>
-        Serve Speed
+        {title}
       </h3>
       <ResponsiveContainer width="100%" height={200}>
         <BarChart data={data}>
@@ -41,7 +66,11 @@ export default function ServeSpeedHistogram({ distribution }: Props) {
           <XAxis
             dataKey="mph"
             tick={{ fontSize: 10, fill: "#999" }}
-            label={{ value: "mph", position: "insideBottomRight", offset: -5, fontSize: 11, fill: "#999" }}
+            // `offset: -5` pulled the "mph" label down into the
+            // container padding where its descender got clipped in the
+            // PDF. Positive offset puts it above the x-tick baseline
+            // with room to spare for the p-descender.
+            label={{ value: "mph", position: "insideBottomRight", offset: 4, fontSize: 11, fill: "#999" }}
           />
           <YAxis
             tick={{ fontSize: 10, fill: "#999" }}
@@ -53,7 +82,7 @@ export default function ServeSpeedHistogram({ distribution }: Props) {
             labelFormatter={(label: string) => `${label} mph`}
             contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #eee" }}
           />
-          <Bar dataKey="pct" fill="#bdbdbd" radius={[2, 2, 0, 0]} />
+          <Bar dataKey="pct" fill={color} radius={[2, 2, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>

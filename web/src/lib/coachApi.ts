@@ -676,6 +676,47 @@ export async function sendRatingReports(args: {
   return body;
 }
 
+/** Send a single player their rating report as a PDF attachment.
+ *  Client renders the PDF from the live DOM (html2pdf.js), passes it
+ *  base64-encoded; the edge function attaches it to the Resend email.
+ *  Logs the send into `rating_report_emails` — same table used by the
+ *  bulk link-based sends — so the delivery log covers both flows. */
+export async function sendRatingReportPdf(args: {
+  /** Session id when the PDF is scoped to a single session; omit for a
+   *  rolling-window (player profile) send. */
+  sessionId?: string;
+  playerId: string;
+  pdfBase64: string;
+  filename?: string;
+  sentBy?: string;
+}): Promise<{
+  status: string;
+  logId?: string;
+  messageId?: string;
+  email?: string;
+}> {
+  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-rating-report-pdf`;
+  const secret = import.meta.env.VITE_COACH_AI_SECRET as string | undefined;
+  if (!secret) {
+    throw new Error(
+      "Emails are disabled — set VITE_COACH_AI_SECRET in web/.env.local and RESEND_API_KEY on the edge function.",
+    );
+  }
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${secret}`,
+    },
+    body: JSON.stringify(args),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body?.error ?? `Request failed (${res.status})`);
+  }
+  return body;
+}
+
 /** Call the `generate-themes` edge function to (re)generate AI themes
  *  for a session × player. Requires `VITE_COACH_AI_SECRET` to be set in
  *  the client env and match the edge function's `WEBHOOK_SECRET`. */

@@ -14,8 +14,16 @@ export default function PlayStyleGauge({ shotSelection }: Props) {
   const total = aggressive + defensive;
   const score = total > 0 ? aggressive / total : 0.5;
 
-  // Map score to angle: -90 (defensive) to +90 (aggressive)
-  const angle = -90 + score * 180;
+  // Map score to needle angle, in SVG degrees (0° = right, -90° = up,
+  // 180° = left). We want the arc to read: defensive far-left → center
+  // top → aggressive far-right, so the angle traces that upper
+  // semicircle.
+  //   score 0    → 180°  (left, "Defensive")
+  //   score 0.5  → -90°  (straight up, "neutral")
+  //   score 1    →  0°   (right, "Aggressive")
+  // The previous formula (-90 + score * 180) mapped 0.5 → horizontal
+  // right, which made even 60% drivers look fully aggressive.
+  const angle = -180 + score * 180;
   const needleLength = 58;
   const cx = 100;
   const cy = 90;

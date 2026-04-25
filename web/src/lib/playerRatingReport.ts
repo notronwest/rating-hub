@@ -26,6 +26,12 @@ export interface GameRowForReport {
   gp: GamePlayer;
   shotTypes: GamePlayerShotType[];
   courtZones: GamePlayerCourtZone[];
+  /** Names of the current player's teammate (same team) and opponents
+   *  (other team), for the "with X vs Y & Z" line on each game card.
+   *  Optional — older callers that don't fetch this just get a plain
+   *  card. */
+  partnerName?: string | null;
+  opponentNames?: string[];
 }
 
 export interface SkillRatings {
