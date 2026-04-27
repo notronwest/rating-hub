@@ -12,7 +12,7 @@ import AnalyzePage from "./pages/AnalyzePage";
 import CoachReviewPage from "./pages/CoachReviewPage";
 import SessionReportPage from "./pages/SessionReportPage";
 import PlayerRatingReportPage from "./pages/PlayerRatingReportPage";
-import PresentationPage from "./pages/PresentationPage";
+import SessionPresentationPage from "./pages/SessionPresentationPage";
 import CoachDashboardPage from "./pages/CoachDashboardPage";
 import EmailHistoryPage from "./pages/EmailHistoryPage";
 import PbvLinkPage from "./pages/PbvLinkPage";
@@ -27,12 +27,12 @@ export default function App() {
       <Route path="/pbv-link" element={<PbvLinkPage />} />
       <Route path="/video-popout/:gameId" element={<VideoPopoutPage />} />
 
-      {/* Presentation deck — full-screen, no AdminLayout chrome. Rendered at
-          the top level so `?share=1` works for anonymous customers (the
-          underlying data reads are gated by game_analyses.is_public RLS). */}
+      {/* Session presentation — full-screen, no AdminLayout chrome.
+          Walks the player through the whole session: priorities,
+          strengths, then per-game flagged moments + sequences. */}
       <Route
-        path="/org/:orgId/games/:gameId/present"
-        element={<PresentationPage />}
+        path="/org/:orgId/sessions/:sessionId/present"
+        element={<SessionPresentationPage />}
       />
 
       {/* Org-scoped pages with shared layout */}

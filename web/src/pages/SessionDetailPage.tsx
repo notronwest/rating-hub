@@ -380,27 +380,49 @@ export default function SessionDetailPage() {
         <EmailRatingReportsPanel sessionId={session.id} />
       </div>
 
-      {/* Player summary */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12, marginBottom: 28 }}>
-        {playerStats.map((p) => (
-          <Link
-            key={p.id}
-            to={`/org/${orgId}/players/${encodeURIComponent(p.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""))}`}
-            style={{
-              padding: "12px 14px",
-              border: "1px solid #e2e2e2",
-              borderRadius: 10,
-              textDecoration: "none",
-              color: "#333",
-            }}
-          >
-            <div style={{ fontWeight: 600, fontSize: 14, color: "#1a73e8" }}>{p.name}</div>
-            <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>
-              {p.wins}W – {p.losses}L
-              <span style={{ marginLeft: 12 }}>Avg: {p.avgRating.toFixed(2)}</span>
+      {/* Player summary — name links to profile, separate "Present" pill
+          opens the session-level presentation walkthrough for that player. */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12, marginBottom: 28 }}>
+        {playerStats.map((p) => {
+          const slug = p.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+          return (
+            <div
+              key={p.id}
+              style={{
+                padding: "12px 14px",
+                border: "1px solid #e2e2e2",
+                borderRadius: 10,
+                background: "#fff",
+              }}
+            >
+              <Link
+                to={`/org/${orgId}/players/${encodeURIComponent(slug)}`}
+                style={{ textDecoration: "none" }}
+              >
+                <div style={{ fontWeight: 600, fontSize: 14, color: "#1a73e8" }}>{p.name}</div>
+                <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>
+                  {p.wins}W – {p.losses}L
+                  <span style={{ marginLeft: 12 }}>Avg: {p.avgRating.toFixed(2)}</span>
+                </div>
+              </Link>
+              <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                <Link
+                  to={`/org/${orgId}/sessions/${session.id}/report?playerId=${p.id}`}
+                  style={sessionActionStyle("#1a73e8")}
+                >
+                  📄 Report
+                </Link>
+                <Link
+                  to={`/org/${orgId}/sessions/${session.id}/present?playerId=${p.id}`}
+                  style={sessionActionStyle("#7c3aed")}
+                  title="Walk this player through their whole session: priorities, strengths, then per-game flagged moments"
+                >
+                  ▶ Present
+                </Link>
+              </div>
             </div>
-          </Link>
-        ))}
+          );
+        })}
       </div>
 
       {/* Games table */}
@@ -555,5 +577,23 @@ function dashboardBtnStyle({
     background: "#fff",
     color: "#444",
     border: "1px solid #ddd",
+  };
+}
+
+function sessionActionStyle(color: string): React.CSSProperties {
+  return {
+    flex: 1,
+    textAlign: "center",
+    padding: "5px 8px",
+    fontSize: 11,
+    fontWeight: 700,
+    letterSpacing: 0.3,
+    textTransform: "uppercase",
+    color,
+    background: "#fff",
+    border: `1px solid ${color}`,
+    borderRadius: 5,
+    textDecoration: "none",
+    fontFamily: "inherit",
   };
 }

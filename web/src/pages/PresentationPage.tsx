@@ -57,7 +57,7 @@ import {
 } from "../lib/rallyAnalysis";
 import VideoPlayer, { type VideoPlayerHandle } from "../components/analyze/VideoPlayer";
 
-interface PlayerRow {
+export interface PlayerRow {
   id: string;
   display_name: string;
   slug: string;
@@ -72,7 +72,7 @@ interface PlayerRow {
 // notes still plays the clip and prompts the coach to talk through it
 // live. A lead-off "summary" slide carries the overall coach note so the
 // walkthrough opens on the big-picture framing.
-type QueueItem =
+export type QueueItem =
   | {
       kind: "summary";
       itemKey: string;
@@ -695,7 +695,7 @@ function EmptyState({ player }: { player: PlayerRow }) {
 
 // ─────────────────────────── Summary slide ───────────────────────────
 
-function SummarySlide({
+export function SummarySlide({
   item,
   player,
   currentIdx,
@@ -824,7 +824,7 @@ interface ItemViewProps {
   muted: boolean;
 }
 
-function ItemView({
+export function ItemView({
   item,
   player: _player,
   playbackId,
@@ -1216,7 +1216,7 @@ const emptyStateStyle: CSSProperties = {
   padding: 40,
 };
 
-const itemRootStyle: CSSProperties = {
+export const itemRootStyle: CSSProperties = {
   flex: 1,
   display: "flex",
   flexDirection: "column",
@@ -1227,7 +1227,7 @@ const itemRootStyle: CSSProperties = {
   boxSizing: "border-box",
 };
 
-const itemHeaderStyle: CSSProperties = {
+export const itemHeaderStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
   gap: 10,
@@ -1282,7 +1282,7 @@ const noteBodyStyle: CSSProperties = {
   whiteSpace: "pre-wrap",
 };
 
-function itemKindChipStyle(kind: "flag" | "sequence" | "loss" | "summary"): CSSProperties {
+export function itemKindChipStyle(kind: string): CSSProperties {
   const color =
     kind === "flag"
       ? "#f5a623"

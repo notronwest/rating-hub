@@ -290,25 +290,46 @@ function Toolbar({
         ← Back to session
       </Link>
       {selectedId && (
-        <Link
-          to={`/org/${orgId}/sessions/${sessionId}/rating-report?playerId=${selectedId}`}
-          title="Switch to the data-only rating report for this session — stats, charts, auto bullets"
-          style={{
-            padding: "4px 10px",
-            fontSize: 11,
-            fontWeight: 700,
-            background: "#fff",
-            color: "#1a73e8",
-            border: "1px solid #1a73e8",
-            borderRadius: 12,
-            textDecoration: "none",
-            fontFamily: "inherit",
-            letterSpacing: 0.3,
-            textTransform: "uppercase",
-          }}
-        >
-          📊 Rating report
-        </Link>
+        <>
+          <Link
+            to={`/org/${orgId}/sessions/${sessionId}/rating-report?playerId=${selectedId}`}
+            title="Switch to the data-only rating report for this session — stats, charts, auto bullets"
+            style={{
+              padding: "4px 10px",
+              fontSize: 11,
+              fontWeight: 700,
+              background: "#fff",
+              color: "#1a73e8",
+              border: "1px solid #1a73e8",
+              borderRadius: 12,
+              textDecoration: "none",
+              fontFamily: "inherit",
+              letterSpacing: 0.3,
+              textTransform: "uppercase",
+            }}
+          >
+            📊 Rating report
+          </Link>
+          <Link
+            to={`/org/${orgId}/sessions/${sessionId}/present?playerId=${selectedId}`}
+            title="Walk this player through the whole session: priorities, strengths, then per-game flagged moments"
+            style={{
+              padding: "4px 10px",
+              fontSize: 11,
+              fontWeight: 700,
+              background: "#7c3aed",
+              color: "#fff",
+              border: "1px solid #7c3aed",
+              borderRadius: 12,
+              textDecoration: "none",
+              fontFamily: "inherit",
+              letterSpacing: 0.3,
+              textTransform: "uppercase",
+            }}
+          >
+            ▶ Present
+          </Link>
+        </>
       )}
       <span style={{ flex: 1 }} />
       <span style={{ fontSize: 12, color: "#666" }}>Player:</span>

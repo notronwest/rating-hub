@@ -790,25 +790,6 @@ export default function CoachReviewPage() {
               >
                 ✕
               </button>
-              <Link
-                to={`/org/${orgId}/games/${gameId}/present?playerId=${selectedPlayer.id}`}
-                title="Open the presentation deck to walk through findings with the player"
-                style={{
-                  padding: "4px 10px",
-                  fontSize: 11,
-                  fontWeight: 700,
-                  background: "#7c3aed",
-                  color: "#fff",
-                  border: "1px solid #7c3aed",
-                  borderRadius: 12,
-                  textDecoration: "none",
-                  fontFamily: "inherit",
-                  letterSpacing: 0.3,
-                  textTransform: "uppercase",
-                }}
-              >
-                ▶ Present
-              </Link>
             </div>
           ) : null
         }
@@ -2729,25 +2710,6 @@ function PlayerPickerGrid({
                   )}
                 </div>
 
-                {/* Actions — secondary entrypoints to the same player's
-                    Report and Presentation views, so the coach can jump
-                    there without going through the queue first. */}
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 6,
-                    padding: "6px 10px 10px",
-                    borderTop: "1px solid #f0f0f0",
-                  }}
-                >
-                  <Link
-                    to={`/org/${orgId}/games/${gameId}/present?playerId=${p.id}`}
-                    style={pickerActionStyle("#7c3aed")}
-                    title="Open the presentation deck for this player"
-                  >
-                    ▶ Present
-                  </Link>
-                </div>
               </div>
             );
           })}
@@ -2765,24 +2727,6 @@ function countChipStyle(color: string): React.CSSProperties {
     border: `1px solid ${color}33`,
     padding: "3px 8px",
     borderRadius: 10,
-  };
-}
-
-function pickerActionStyle(color: string): React.CSSProperties {
-  return {
-    flex: 1,
-    textAlign: "center",
-    padding: "5px 10px",
-    fontSize: 11,
-    fontWeight: 700,
-    letterSpacing: 0.3,
-    textTransform: "uppercase",
-    color,
-    background: "#fff",
-    border: `1px solid ${color}`,
-    borderRadius: 5,
-    textDecoration: "none",
-    fontFamily: "inherit",
   };
 }
 
