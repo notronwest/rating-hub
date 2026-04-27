@@ -37,6 +37,7 @@ import {
   type PlayerRatingReport,
 } from "../lib/playerRatingReport";
 import { BarChart, Sparkline } from "../components/report/MiniCharts";
+import { parseGameIdx as extractGameIdx } from "../lib/sessionGames";
 
 const DEFAULT_WINDOW = 6;
 const WINDOW_OPTIONS = [3, 6, 10, 20];
@@ -1605,16 +1606,8 @@ const footerStyle: React.CSSProperties = {
 //   "cg-gw-rw-jn-2026-04-20-gm-2"  — raw PBV session name (gm-N suffix)
 //   "Game 06"                      — pretty label that some import
 //                                     paths store directly
-// Returns null when neither pattern matches so the caller can fall
-// back cleanly.
-function extractGameIdx(sessionName: string | null | undefined): number | null {
-  if (!sessionName) return null;
-  const gm = sessionName.match(/gm-(\d+)/i);
-  if (gm) return parseInt(gm[1], 10);
-  const game = sessionName.match(/\bGame\s+0*(\d+)/i);
-  if (game) return parseInt(game[1], 10);
-  return null;
-}
+// extractGameIdx imported from lib/sessionGames at the top — handles
+// gm-N, Game NN, and the older GmN convention.
 
 // Display label for a game card. Normalizes both formats above so we
 // never show "cg-gw-rw-jn-2026-04-20-gm-2" to a player.
