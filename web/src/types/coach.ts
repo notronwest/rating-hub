@@ -17,6 +17,24 @@ export interface GameAnalysis {
   updated_at: string;
 }
 
+/** Per-session × per-player coach takeaway. Sibling to GameAnalysis but
+ *  scoped one level up — holds the SESSION-wide overall_note + tone +
+ *  dismissed_loss_keys. Per-rally items (flags / sequences / losses)
+ *  still pin to per-game GameAnalysis rows; this is just the synthesis
+ *  the coach writes once across the whole session. Added in migration 026. */
+export interface SessionAnalysis {
+  id: string;
+  org_id: string;
+  session_id: string;
+  player_id: string;
+  coach_id: string | null;
+  overall_note: string | null;
+  overall_tone: "good_job" | "needs_work" | null;
+  dismissed_loss_keys: string[];
+  created_at: string;
+  updated_at: string;
+}
+
 export type NoteCategory =
   | "serve"
   | "return"
@@ -89,13 +107,17 @@ export interface FlaggedShot {
   created_at: string;
 }
 
-/** A coach-added entry on the new "Stats to Review" panel. The stat_key
+/** A coach-added entry on the "Stats to Review" panel. The stat_key
  *  is an open string so new stats can be added without DB changes —
  *  current values: stat.kitchen_arrival.serving, stat.kitchen_arrival.returning,
- *  stat.shot_share, stat.rally_win. */
+ *  stat.shot_share, stat.rally_win.
+ *
+ *  Scope is either per-game (analysis_id set) or per-session (session_id
+ *  set, added in migration 026). Exactly one is non-null. */
 export interface CoachStatReview {
   id: string;
-  analysis_id: string;
+  analysis_id: string | null;
+  session_id: string | null;
   player_id: string;
   stat_key: string;
   created_at: string;

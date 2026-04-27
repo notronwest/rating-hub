@@ -1,6 +1,7 @@
 import { supabase } from "../supabase";
 import type {
   GameAnalysis,
+  SessionAnalysis,
   AnalysisNote,
   PlayerAssessment,
   AssessmentKind,
@@ -81,12 +82,78 @@ export async function setDismissedLossKeys(
 }
 
 // ─────────────────────────────────────────────────────────────────
+// Session-level coach analysis (mirror of game_analyses, scoped to
+// (session, player) instead of (game). Holds the session-wide
+// overall_note + tone + dismissed_loss_keys the coach writes once
+// per session — added in migration 026 as the move from per-game
+// to per-session coaching synthesis.
+// ─────────────────────────────────────────────────────────────────
+
+export async function getOrCreateSessionAnalysis(args: {
+  sessionId: string;
+  playerId: string;
+  orgId: string;
+  coachUserId: string;
+}): Promise<SessionAnalysis> {
+  const { sessionId, playerId, orgId, coachUserId } = args;
+  const { data: existing } = await supabase
+    .from("session_analyses")
+    .select("*")
+    .eq("session_id", sessionId)
+    .eq("player_id", playerId)
+    .maybeSingle();
+  if (existing) return existing as SessionAnalysis;
+
+  const { data: created, error } = await supabase
+    .from("session_analyses")
+    .insert({
+      session_id: sessionId,
+      player_id: playerId,
+      org_id: orgId,
+      coach_id: coachUserId,
+    })
+    .select("*")
+    .single();
+  if (error) throw new Error(`Failed to create session analysis: ${error.message}`);
+  return created as SessionAnalysis;
+}
+
+export async function updateSessionAnalysis(
+  id: string,
+  patch: Partial<Pick<SessionAnalysis, "overall_note" | "overall_tone">>,
+): Promise<void> {
+  const { error } = await supabase
+    .from("session_analyses")
+    .update(patch)
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/** Replace the whole dismissed-losses array for one session_analyses
+ *  row. Same key shape as game_analyses.dismissed_loss_keys —
+ *  "loss:<rallyId>:<attributedShotId>". */
+export async function setSessionDismissedLossKeys(
+  id: string,
+  keys: string[],
+): Promise<void> {
+  const { error } = await supabase
+    .from("session_analyses")
+    .update({ dismissed_loss_keys: keys })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+// ─────────────────────────────────────────────────────────────────
 // WMPC Analysis Topic recommendations
 // ─────────────────────────────────────────────────────────────────
 
 export interface TopicRecommendationRow {
   id: string;
-  analysis_id: string;
+  /** Per-game scope. NULL when the row is session-scoped instead. */
+  analysis_id: string | null;
+  /** Per-session scope, added in migration 026. NULL on legacy
+   *  per-game rows. Exactly one of analysis_id / session_id is set. */
+  session_id: string | null;
   player_id: string;
   topic_id: string;
   recommendation: string | null;
@@ -147,6 +214,60 @@ export async function upsertTopicRecommendation(params: {
   return data as TopicRecommendationRow;
 }
 
+/** Session-scoped variant — lists topic recommendations the coach
+ *  has written at the session level (one rec per topic, applies
+ *  across every game in the session). Keyed by (session, player). */
+export async function listSessionTopicRecommendations(
+  sessionId: string,
+  playerId?: string,
+): Promise<TopicRecommendationRow[]> {
+  let q = supabase
+    .from("analysis_topic_recommendations")
+    .select("*")
+    .eq("session_id", sessionId);
+  if (playerId) q = q.eq("player_id", playerId);
+  const { data, error } = await q;
+  if (error) throw new Error(error.message);
+  return (data ?? []) as TopicRecommendationRow[];
+}
+
+/** Upsert a session-scoped recommendation. Mirrors
+ *  upsertTopicRecommendation but keyed on (session_id, player_id, topic_id)
+ *  with analysis_id explicitly null. The DB CHECK constraint enforces
+ *  exactly-one-of analysis_id/session_id, so we don't accidentally end
+ *  up with rows scoped both ways. */
+export async function upsertSessionTopicRecommendation(params: {
+  sessionId: string;
+  playerId: string;
+  topicId: string;
+  recommendation: string | null;
+  tags: string[];
+  dismissed: boolean;
+  fptm?: unknown;
+  drills?: string | null;
+}): Promise<TopicRecommendationRow> {
+  const { data, error } = await supabase
+    .from("analysis_topic_recommendations")
+    .upsert(
+      {
+        analysis_id: null,
+        session_id: params.sessionId,
+        player_id: params.playerId,
+        topic_id: params.topicId,
+        recommendation: params.recommendation,
+        tags: params.tags,
+        dismissed: params.dismissed,
+        fptm: params.fptm ?? null,
+        drills: params.drills ?? null,
+      },
+      { onConflict: "session_id,player_id,topic_id" },
+    )
+    .select("*")
+    .single();
+  if (error) throw new Error(error.message);
+  return data as TopicRecommendationRow;
+}
+
 // ─────────────────────────────────────────────────────────────────
 // Stat Review entries — the "Stats to Review" panel on Coach Review.
 // Just tracks which (analysis, player, stat_key) tuples a coach has
@@ -194,6 +315,59 @@ export async function removeStatReview(params: {
     .from("coach_stat_reviews")
     .delete()
     .eq("analysis_id", params.analysisId)
+    .eq("player_id", params.playerId)
+    .eq("stat_key", params.statKey);
+  if (error) throw new Error(error.message);
+}
+
+// Session-scoped Stat Review entries — same shape as the per-game
+// helpers above, but keyed on (session, player). Used by the new
+// session-level Coach Review surface (added in migration 026). The
+// per-rally instances rendered in the panel are computed live from
+// the per-game data the same way the per-game variant does.
+
+export async function listSessionStatReviews(
+  sessionId: string,
+): Promise<CoachStatReview[]> {
+  const { data, error } = await supabase
+    .from("coach_stat_reviews")
+    .select("*")
+    .eq("session_id", sessionId);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as CoachStatReview[];
+}
+
+export async function addSessionStatReview(params: {
+  sessionId: string;
+  playerId: string;
+  statKey: string;
+}): Promise<CoachStatReview> {
+  const { data, error } = await supabase
+    .from("coach_stat_reviews")
+    .upsert(
+      {
+        analysis_id: null,
+        session_id: params.sessionId,
+        player_id: params.playerId,
+        stat_key: params.statKey,
+      },
+      { onConflict: "session_id,player_id,stat_key" },
+    )
+    .select("*")
+    .single();
+  if (error) throw new Error(error.message);
+  return data as CoachStatReview;
+}
+
+export async function removeSessionStatReview(params: {
+  sessionId: string;
+  playerId: string;
+  statKey: string;
+}): Promise<void> {
+  const { error } = await supabase
+    .from("coach_stat_reviews")
+    .delete()
+    .eq("session_id", params.sessionId)
     .eq("player_id", params.playerId)
     .eq("stat_key", params.statKey);
   if (error) throw new Error(error.message);
