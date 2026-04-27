@@ -43,7 +43,6 @@ import {
   type TopicId,
   type TopicRecommendation,
 } from "../lib/reviewTopics";
-import CommonThemesPanel from "../components/report/CommonThemesPanel";
 import PrioritiesPanel from "../components/report/PrioritiesPanel";
 import StrengthsPanel from "../components/report/StrengthsPanel";
 
@@ -537,11 +536,6 @@ function PlayerSessionReport({
           </Section>
         );
       })()}
-
-      {/* Common themes — AI-generated coaching takeaways the coach can edit. */}
-      <Section title="Common themes">
-        <CommonThemesPanel sessionId={session.id} playerId={player.id} />
-      </Section>
 
       {/* Aggregate stats */}
       <Section title={`Session rollup · average across ${perGame.length} games`}>
