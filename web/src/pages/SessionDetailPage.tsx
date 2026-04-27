@@ -328,25 +328,8 @@ export default function SessionDetailPage() {
         </h2>
         <span style={{ flex: 1 }} />
         <Link
-          to={`/org/${orgId}/sessions/${session.id}/rating-report`}
-          title="Data-only stats report for each player in this session — works without any coach review"
-          style={{
-            padding: "6px 12px",
-            fontSize: 12,
-            fontWeight: 600,
-            background: "#fff",
-            color: "#1a73e8",
-            border: "1px solid #1a73e8",
-            borderRadius: 6,
-            textDecoration: "none",
-            fontFamily: "inherit",
-          }}
-        >
-          📊 Rating report
-        </Link>
-        <Link
           to={`/org/${orgId}/sessions/${session.id}/report`}
-          title="Coach's session report — rollup + recurring themes + per-game coach notes"
+          title="Coach's session report — top priorities, strengths, coach notes, ratings rollup, per-game cards"
           style={{
             padding: "6px 12px",
             fontSize: 12,
