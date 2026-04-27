@@ -570,7 +570,7 @@ export interface CoachingTheme {
   created_at: string;
   updated_at: string;
   // Added in migrations 023 + 024:
-  kind: "theme" | "priority";
+  kind: "theme" | "priority" | "strength";
   priority_rank: number | null;
   evidence_chips: PriorityChip[];
   pinned: boolean;
@@ -579,6 +579,16 @@ export interface CoachingTheme {
   ai_original_solution: string | null;
   ai_model: string | null;
   ai_generated_at: string | null;
+  // Added in migration 025:
+  /** "draft" — fresh AI output, awaiting coach approval.
+   *  "active" — coach promoted; surfaces on the player's Working-on view.
+   *  "archived" — coach removed.
+   *  "mastered" — coach confirmed the player resolved it. */
+  status: "draft" | "active" | "archived" | "mastered";
+  lead_stat_key: string | null;
+  lead_stat_value_at_creation: number | null;
+  lead_stat_value_latest: number | null;
+  lead_stat_updated_at: string | null;
 }
 
 /** Evidence chip on a priority — links the priority back to the stat or
@@ -674,6 +684,38 @@ export async function setPriorityPinned(
     .update({ pinned })
     .eq("id", id);
   if (error) throw new Error(error.message);
+}
+
+/** Move through the status lifecycle. Used by the coach to promote a
+ *  draft priority/strength to active (so it appears on the player's
+ *  Working-on view), archive ones that aren't worth pursuing, or mark
+ *  one mastered when the player has resolved it. */
+export async function setPriorityStatus(
+  id: string,
+  status: "draft" | "active" | "archived" | "mastered",
+): Promise<void> {
+  const { error } = await supabase
+    .from("player_coaching_themes")
+    .update({ status })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/** List a player's strengths for one session. Same row shape as
+ *  priorities, kind='strength'. */
+export async function listStrengths(
+  sessionId: string,
+  playerId: string,
+): Promise<CoachingTheme[]> {
+  const { data, error } = await supabase
+    .from("player_coaching_themes")
+    .select("*")
+    .eq("session_id", sessionId)
+    .eq("player_id", playerId)
+    .eq("kind", "strength")
+    .order("priority_rank");
+  if (error) throw new Error(error.message);
+  return (data ?? []) as CoachingTheme[];
 }
 
 /** Bulk re-rank — used by ↑/↓ and drag-reorder. Pass an array of

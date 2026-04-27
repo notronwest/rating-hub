@@ -27,6 +27,7 @@ import {
   listPriorities,
   reorderPriorities,
   setPriorityPinned,
+  setPriorityStatus,
   updatePriority,
   type CoachingTheme,
   type PriorityChip,
@@ -71,10 +72,13 @@ export default function PrioritiesPanel({ sessionId, playerId, readOnly = false 
 
   // Sort by priority_rank ascending so 1 is at the top.
   const sorted = useMemo(() => {
-    return [...(priorities ?? [])].sort(
-      (a, b) => (a.priority_rank ?? 99) - (b.priority_rank ?? 99),
-    );
-  }, [priorities]);
+    const list = [...(priorities ?? [])]
+      // In read-only / player-facing mode, hide everything that hasn't
+      // been promoted to active.
+      .filter((p) => (readOnly ? p.status === "active" : true))
+      .sort((a, b) => (a.priority_rank ?? 99) - (b.priority_rank ?? 99));
+    return list;
+  }, [priorities, readOnly]);
 
   const visible = sorted.slice(0, N_VISIBLE);
   const drafts = sorted.slice(N_VISIBLE);
@@ -120,6 +124,23 @@ export default function PrioritiesPanel({ sessionId, playerId, readOnly = false 
     );
     try {
       await setPriorityPinned(id, !currentlyPinned);
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  }
+
+  /** Move a priority through the draft → active → archived/mastered
+   *  lifecycle. Active = ships to the player and the cross-session
+   *  Working-on view. */
+  async function handleStatus(
+    id: string,
+    status: "draft" | "active" | "archived" | "mastered",
+  ) {
+    setPriorities((prev) =>
+      (prev ?? []).map((p) => (p.id === id ? { ...p, status } : p)),
+    );
+    try {
+      await setPriorityStatus(id, status);
     } catch (e) {
       setErr((e as Error).message);
     }
@@ -265,6 +286,10 @@ export default function PrioritiesPanel({ sessionId, playerId, readOnly = false 
             onMoveUp={() => handleMove(p.id, "up")}
             onMoveDown={() => handleMove(p.id, "down")}
             onDelete={() => handleDelete(p.id)}
+            onPromote={() => handleStatus(p.id, "active")}
+            onArchive={() => handleStatus(p.id, "archived")}
+            onMaster={() => handleStatus(p.id, "mastered")}
+            onDemote={() => handleStatus(p.id, "draft")}
           />
         ))}
       </div>
@@ -315,6 +340,10 @@ interface RowProps {
   onMoveUp: () => void;
   onMoveDown: () => void;
   onDelete: () => void;
+  onPromote: () => void;
+  onArchive: () => void;
+  onMaster: () => void;
+  onDemote: () => void;
 }
 
 function PriorityRow({
@@ -328,8 +357,13 @@ function PriorityRow({
   onMoveUp,
   onMoveDown,
   onDelete,
+  onPromote,
+  onArchive,
+  onMaster,
+  onDemote,
 }: RowProps) {
   const tier = inferTier(p);
+  const isDraft = p.status === "draft";
   return (
     <div
       style={{
@@ -339,6 +373,7 @@ function PriorityRow({
         alignItems: "start",
         padding: "14px 10px",
         borderTop: "1px solid #f1f3f5",
+        opacity: isDraft && !readOnly ? 0.78 : 1,
       }}
     >
       <div style={rankStyle(p.priority_rank ?? 99)}>{p.priority_rank ?? "?"}</div>
@@ -359,11 +394,22 @@ function PriorityRow({
             {p.title}
             {p.pinned && <span title="Pinned" style={badgeStyle("#1a73e8")}>📌</span>}
             {p.edited && <span title="Coach-edited" style={badgeStyle("#1e7e34")}>✎</span>}
+            {!readOnly && <StatusBadge status={p.status} />}
           </div>
         )}
 
         <div style={metaRowStyle}>
           <TierPill tier={tier} />
+          {/* Lead-stat trend signal — shown only when we have a snapshot
+              from creation AND a fresher value to compare against. */}
+          {p.lead_stat_value_at_creation != null &&
+            p.lead_stat_value_latest != null &&
+            p.lead_stat_value_latest !== p.lead_stat_value_at_creation && (
+              <TrendBadge
+                from={p.lead_stat_value_at_creation}
+                to={p.lead_stat_value_latest}
+              />
+            )}
         </div>
 
         {isEditing ? (
@@ -414,9 +460,75 @@ function PriorityRow({
             📌
           </IconBtn>
           <IconBtn title="Delete" onClick={onDelete}>🗑</IconBtn>
+
+          {/* Lifecycle */}
+          {isDraft ? (
+            <button
+              onClick={onPromote}
+              style={promoteBtnStyle}
+              title="Promote this draft to active so it ships to the player and the cross-session Working-on view"
+            >
+              ✓ Active
+            </button>
+          ) : (
+            <>
+              <IconBtn title="Mark as mastered" onClick={onMaster}>🏆</IconBtn>
+              <IconBtn title="Archive" onClick={onArchive}>📦</IconBtn>
+              <IconBtn title="Demote to draft" onClick={onDemote}>↺</IconBtn>
+            </>
+          )}
         </div>
       )}
     </div>
+  );
+}
+
+function StatusBadge({ status }: { status: CoachingTheme["status"] }) {
+  const map: Record<CoachingTheme["status"], { label: string; bg: string; fg: string }> = {
+    draft: { label: "DRAFT", bg: "#fff3cd", fg: "#92400e" },
+    active: { label: "ACTIVE", bg: "#e6f4ea", fg: "#1e7e34" },
+    archived: { label: "ARCHIVED", bg: "#f1f3f5", fg: "#6b7280" },
+    mastered: { label: "MASTERED", bg: "#e7f1fa", fg: "#0b6ea8" },
+  };
+  const m = map[status];
+  return (
+    <span
+      style={{
+        marginLeft: 8,
+        padding: "1px 7px",
+        borderRadius: 3,
+        fontSize: 9,
+        fontWeight: 700,
+        letterSpacing: 0.4,
+        background: m.bg,
+        color: m.fg,
+        verticalAlign: "middle",
+      }}
+    >
+      {m.label}
+    </span>
+  );
+}
+
+function TrendBadge({ from, to }: { from: number; to: number }) {
+  const delta = to - from;
+  const positive = delta > 0;
+  const color = positive ? "#1e7e34" : "#c62828";
+  const arrow = positive ? "▲" : "▼";
+  return (
+    <span
+      style={{
+        fontSize: 10,
+        color,
+        fontWeight: 700,
+        background: positive ? "#e6f4ea" : "#fdecea",
+        padding: "1px 6px",
+        borderRadius: 3,
+      }}
+      title={`Started at ${from}%, now ${to}%`}
+    >
+      {arrow} {Math.abs(Math.round(delta))} pts
+    </span>
   );
 }
 
@@ -736,6 +848,19 @@ const primaryBtnStyle: React.CSSProperties = {
   borderRadius: 6,
   cursor: "pointer",
   fontFamily: "inherit",
+};
+
+const promoteBtnStyle: React.CSSProperties = {
+  padding: "4px 10px",
+  fontSize: 11,
+  fontWeight: 700,
+  background: "#1e7e34",
+  color: "#fff",
+  border: "1px solid #1e7e34",
+  borderRadius: 6,
+  cursor: "pointer",
+  fontFamily: "inherit",
+  whiteSpace: "nowrap",
 };
 
 const ghostBtnStyle: React.CSSProperties = {

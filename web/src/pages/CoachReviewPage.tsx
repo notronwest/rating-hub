@@ -791,26 +791,6 @@ export default function CoachReviewPage() {
                 ✕
               </button>
               <Link
-                to={`/org/${orgId}/games/${gameId}/report?playerId=${selectedPlayer.id}`}
-                title="View the printable coaching report for this player"
-                style={{
-                  marginLeft: 6,
-                  padding: "4px 10px",
-                  fontSize: 11,
-                  fontWeight: 700,
-                  background: "#fff",
-                  color: "#1a73e8",
-                  border: "1px solid #1a73e8",
-                  borderRadius: 12,
-                  textDecoration: "none",
-                  fontFamily: "inherit",
-                  letterSpacing: 0.3,
-                  textTransform: "uppercase",
-                }}
-              >
-                📄 Report
-              </Link>
-              <Link
                 to={`/org/${orgId}/games/${gameId}/present?playerId=${selectedPlayer.id}`}
                 title="Open the presentation deck to walk through findings with the player"
                 style={{
@@ -2760,13 +2740,6 @@ function PlayerPickerGrid({
                     borderTop: "1px solid #f0f0f0",
                   }}
                 >
-                  <Link
-                    to={`/org/${orgId}/games/${gameId}/report?playerId=${p.id}`}
-                    style={pickerActionStyle("#1a73e8")}
-                    title="Open the printable coaching report for this player"
-                  >
-                    📄 Report
-                  </Link>
                   <Link
                     to={`/org/${orgId}/games/${gameId}/present?playerId=${p.id}`}
                     style={pickerActionStyle("#7c3aed")}

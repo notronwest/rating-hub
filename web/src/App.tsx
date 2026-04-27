@@ -10,7 +10,6 @@ import ImportPage from "./pages/ImportPage";
 import LoginPage from "./pages/LoginPage";
 import AnalyzePage from "./pages/AnalyzePage";
 import CoachReviewPage from "./pages/CoachReviewPage";
-import GameReportPage from "./pages/GameReportPage";
 import SessionReportPage from "./pages/SessionReportPage";
 import PlayerRatingReportPage from "./pages/PlayerRatingReportPage";
 import PresentationPage from "./pages/PresentationPage";
@@ -53,7 +52,6 @@ export default function App() {
           element={<PlayerRatingReportPage />}
         />
         <Route path="games/:gameId" element={<GameDetailPage />} />
-        <Route path="games/:gameId/report" element={<GameReportPage />} />
         <Route path="import" element={<ImportPage />} />
 
         {/* Coach-only pages */}

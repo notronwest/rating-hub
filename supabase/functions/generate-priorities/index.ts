@@ -30,9 +30,12 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const DEFAULT_MODEL = "claude-haiku-4-5-20251001";
-/** Total ranks to keep populated. UI shows top 4 by default + expander
- *  to ranks 5..10 the coach can promote. */
+/** Total priority ranks to keep populated. UI shows top 4 by default
+ *  + expander to ranks 5..10 the coach can promote. */
 const TARGET_N = 10;
+/** How many strengths to ask Claude for. Surfaces 1–3 callouts the
+ *  coach can show alongside priorities. */
+const TARGET_STRENGTHS = 3;
 
 type Tier = "needs_work" | "ok" | "good" | "great";
 
@@ -49,6 +52,16 @@ interface PriorityBody {
   problem: string;
   solution: string;
   tier: Tier;
+  evidence_chips: EvidenceChip[];
+}
+
+interface StrengthBody {
+  title: string;
+  /** What the player is doing right. Same shape as a priority's
+   *  "problem" so the row layout is consistent. */
+  problem: string;
+  /** How to keep / lean into it. Same shape as a priority's "solution". */
+  solution: string;
   evidence_chips: EvidenceChip[];
 }
 
@@ -218,8 +231,11 @@ Deno.serve(async (req) => {
   const rawText: string = anthropicJson?.content?.[0]?.text ?? "";
 
   let drafted: PriorityBody[];
+  let strengths: StrengthBody[] = [];
   try {
-    drafted = parsePriorities(rawText, slotsToFill);
+    const parsed = parseModelOutput(rawText, slotsToFill);
+    drafted = parsed.priorities;
+    strengths = parsed.strengths;
   } catch (e) {
     return json({
       error: `Could not parse Claude output: ${(e as Error).message}`,
@@ -270,31 +286,91 @@ Deno.serve(async (req) => {
 
   const generatedAt = new Date().toISOString();
   const orgId = (session as any).org_id;
-  const insertRows = fresh.map((p, i) => ({
-    org_id: orgId,
-    player_id: playerId,
-    session_id: sessionId,
-    kind: "priority",
-    priority_rank: availableRanks[i],
-    title: p.title,
-    problem: p.problem,
-    solution: p.solution,
-    evidence_chips: p.evidence_chips,
-    order_idx: availableRanks[i] - 1,
-    source: "ai",
-    edited: false,
-    pinned: false,
-    ai_original_title: p.title,
-    ai_original_problem: p.problem,
-    ai_original_solution: p.solution,
-    ai_model: model,
-    ai_generated_at: generatedAt,
-  }));
+
+  // Snapshot the lead stat — value at creation lets the player profile
+  // show "▲ 18% since 4/19" for each priority later, without recomputing
+  // the snapshot every page load.
+  const insertRows = fresh.map((p, i) => {
+    const leadKey = leadChipKey(p);
+    const leadValue = leadKey != null ? snapshot[leadKey] ?? null : null;
+    return {
+      org_id: orgId,
+      player_id: playerId,
+      session_id: sessionId,
+      kind: "priority",
+      priority_rank: availableRanks[i],
+      title: p.title,
+      problem: p.problem,
+      solution: p.solution,
+      evidence_chips: p.evidence_chips,
+      order_idx: availableRanks[i] - 1,
+      source: "ai",
+      edited: false,
+      pinned: false,
+      // New rows always start as drafts; the coach explicitly promotes
+      // a draft to "active" to surface it on the player's Working-on view.
+      status: "draft",
+      lead_stat_key: leadKey,
+      lead_stat_value_at_creation: typeof leadValue === "number" ? leadValue : null,
+      lead_stat_value_latest: typeof leadValue === "number" ? leadValue : null,
+      lead_stat_updated_at: generatedAt,
+      ai_original_title: p.title,
+      ai_original_problem: p.problem,
+      ai_original_solution: p.solution,
+      ai_model: model,
+      ai_generated_at: generatedAt,
+    };
+  });
   const { data: inserted, error: insErr } = await supabase
     .from("player_coaching_themes")
     .insert(insertRows)
     .select();
   if (insErr) return json({ error: `insert priorities: ${insErr.message}` }, 500);
+
+  // ── Strengths — a separate kind, same row shape ──
+  // Replace existing AI-generated strengths for this session + player.
+  // (Coach edits live in their own kind-scoped delete filter.)
+  await supabase
+    .from("player_coaching_themes")
+    .delete()
+    .eq("session_id", sessionId)
+    .eq("player_id", playerId)
+    .eq("kind", "strength")
+    .eq("edited", false)
+    .eq("pinned", false);
+
+  if (strengths.length > 0) {
+    const strengthRows = strengths.map((s, i) => {
+      const leadKey = leadChipKey({ ...s, tier: "good", evidence_chips: s.evidence_chips });
+      const leadValue = leadKey != null ? snapshot[leadKey] ?? null : null;
+      return {
+        org_id: orgId,
+        player_id: playerId,
+        session_id: sessionId,
+        kind: "strength",
+        priority_rank: i + 1,
+        title: s.title,
+        problem: s.problem,
+        solution: s.solution,
+        evidence_chips: s.evidence_chips,
+        order_idx: i,
+        source: "ai",
+        edited: false,
+        pinned: false,
+        status: "draft",
+        lead_stat_key: leadKey,
+        lead_stat_value_at_creation: typeof leadValue === "number" ? leadValue : null,
+        lead_stat_value_latest: typeof leadValue === "number" ? leadValue : null,
+        lead_stat_updated_at: generatedAt,
+        ai_original_title: s.title,
+        ai_original_problem: s.problem,
+        ai_original_solution: s.solution,
+        ai_model: model,
+        ai_generated_at: generatedAt,
+      };
+    });
+    await supabase.from("player_coaching_themes").insert(strengthRows);
+  }
 
   // Journal the creations.
   if (inserted && inserted.length > 0) {
@@ -311,14 +387,29 @@ Deno.serve(async (req) => {
     );
   }
 
-  // Return the merged set, sorted by rank ascending.
-  const merged = [...protectedRows, ...(inserted ?? [])].sort(
-    (a, b) => (a.priority_rank ?? 99) - (b.priority_rank ?? 99),
-  );
+  // Re-list both kinds so the response is the live truth (strengths
+  // were just upserted, easier than tracking inserted IDs by hand).
+  const { data: finalPriorities } = await supabase
+    .from("player_coaching_themes")
+    .select("*")
+    .eq("session_id", sessionId)
+    .eq("player_id", playerId)
+    .eq("kind", "priority")
+    .order("priority_rank");
+  const { data: finalStrengths } = await supabase
+    .from("player_coaching_themes")
+    .select("*")
+    .eq("session_id", sessionId)
+    .eq("player_id", playerId)
+    .eq("kind", "strength")
+    .order("priority_rank");
+
   return json({
-    priorities: merged,
+    priorities: finalPriorities ?? [],
+    strengths: finalStrengths ?? [],
     regenerated: inserted?.length ?? 0,
     pinned_kept: protectedRows.length,
+    strengths_generated: strengths.length,
   }, 200);
 });
 
@@ -435,9 +526,11 @@ function round(v: number, d: number): number {
 
 function buildSystemPrompt(slotsToFill: number): string {
   return `You are a pickleball coaching assistant for the White Mountain Pickleball Club.
-Your job: produce ${slotsToFill} RANKED top priorities for a single player based
-on this session's games. Each priority is a short coaching prescription
-that the player will work on before their next session.
+Your job: produce two things from this session's games:
+  • ${slotsToFill} RANKED top priorities — short coaching prescriptions
+    the player will work on before their next session.
+  • 1–3 strengths — things the player is already doing well that the
+    coach should call out as positive feedback ("lean into this").
 
 Optimize for IMPACT, not frequency. Pick priorities that:
   - Address the biggest gaps (lowest tiers below) when there is one
@@ -483,26 +576,42 @@ EVIDENCE VOCABULARY — use these keys in evidence_chips. Do not invent keys.
     sequences.count
     coach.notes
 
-Output: ONLY a JSON array of EXACTLY ${slotsToFill} objects, ranked 1..${slotsToFill}
-by impact. No markdown, no prose, no code fences. Each object:
+Output: ONLY a JSON OBJECT with two keys: "priorities" and "strengths".
+No markdown, no prose, no code fences.
+
 {
-  "title":       3–7 words, no trailing punctuation
-  "problem":     1–3 sentences, plain coaching language
-  "solution":    1–3 sentences, concrete drill + measurable target
-  "tier":        "needs_work" | "ok" | "good" | "great"
-  "evidence_chips": [
-    { "key": one of the vocabulary keys above,
-      "label": coach-facing text (include the value, e.g. "Serve deep · 52%"),
-      "kind":  "stat-bad" | "stat-good" | "neutral" }
+  "priorities": [   // EXACTLY ${slotsToFill} objects, ranked 1..${slotsToFill} by impact
+    {
+      "title":       3–7 words, no trailing punctuation
+      "problem":     1–3 sentences, plain coaching language
+      "solution":    1–3 sentences, concrete drill + measurable target
+      "tier":        "needs_work" | "ok" | "good" | "great"
+      "evidence_chips": [
+        { "key": one of the vocabulary keys,
+          "label": coach-facing text (include the value, e.g. "Serve deep · 52%"),
+          "kind":  "stat-bad" | "stat-good" | "neutral" }
+      ]
+    }
+  ],
+  "strengths": [    // 1 to 3 objects — what the player is doing well
+    {
+      "title":       3–7 words, the strength itself ("Patient on dink rallies")
+      "problem":     1–2 sentences, what the player is doing right (still call this "problem" for shape consistency)
+      "solution":    1–2 sentences, how to keep / lean into it ("keep extending dink rallies past 6 shots")
+      "evidence_chips": [
+        { "key": vocabulary key, "label": "Stat · 88%", "kind": "stat-good" or "neutral" }
+      ]
+    }
   ]
 }
 
 Evidence chip rules:
-  - 2 to 4 chips per priority
-  - The FIRST chip should be the headline (the deficit you're addressing
-    on a needs_work priority, the strength on a good/great one)
+  - 2 to 4 chips per item
+  - The FIRST chip should be the headline (the deficit on a priority,
+    the strength stat on a strength)
   - "stat-bad" = deficit (renders red); "stat-good" = strength (green);
-    "neutral" = pointer / context (gray)`;
+    "neutral" = pointer / context (gray)
+  - On STRENGTHS, lead chip should be "stat-good"`;
 }
 
 function buildUserPrompt(args: {
@@ -591,15 +700,29 @@ function buildUserPrompt(args: {
   return lines.join("\n");
 }
 
-function parsePriorities(rawText: string, max: number): PriorityBody[] {
+function parseModelOutput(
+  rawText: string,
+  maxPriorities: number,
+): { priorities: PriorityBody[]; strengths: StrengthBody[] } {
   const cleaned = rawText
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/```\s*$/i, "")
     .trim();
   const parsed = JSON.parse(cleaned);
-  if (!Array.isArray(parsed)) throw new Error("not an array");
-  const out: PriorityBody[] = [];
-  for (const item of parsed) {
+
+  // The model is instructed to return { priorities, strengths } but
+  // we accept a bare array as the priorities list for backwards
+  // compatibility with the v1 prompt.
+  const prioritiesRaw = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray(parsed.priorities)
+    ? parsed.priorities
+    : null;
+  if (!prioritiesRaw) throw new Error("missing 'priorities' array");
+  const strengthsRaw = Array.isArray(parsed?.strengths) ? parsed.strengths : [];
+
+  const priorities: PriorityBody[] = [];
+  for (const item of prioritiesRaw) {
     const title = String(item.title ?? "").trim();
     const problem = String(item.problem ?? "").trim();
     const solution = String(item.solution ?? "").trim();
@@ -608,8 +731,31 @@ function parsePriorities(rawText: string, max: number): PriorityBody[] {
       tierRaw === "ok" || tierRaw === "good" || tierRaw === "great"
         ? tierRaw
         : "needs_work";
-    const chipsArr = Array.isArray(item.evidence_chips) ? item.evidence_chips : [];
-    const evidence_chips: EvidenceChip[] = chipsArr.map((c: any) => {
+    const evidence_chips = parseChips(item.evidence_chips);
+    if (!title || !problem || !solution) continue;
+    priorities.push({ title, problem, solution, tier, evidence_chips });
+    if (priorities.length === maxPriorities) break;
+  }
+  if (priorities.length === 0) throw new Error("no usable priorities returned");
+
+  const strengths: StrengthBody[] = [];
+  for (const item of strengthsRaw) {
+    const title = String(item.title ?? "").trim();
+    const problem = String(item.problem ?? "").trim();
+    const solution = String(item.solution ?? "").trim();
+    const evidence_chips = parseChips(item.evidence_chips);
+    if (!title || !problem || !solution) continue;
+    strengths.push({ title, problem, solution, evidence_chips });
+    if (strengths.length === TARGET_STRENGTHS) break;
+  }
+
+  return { priorities, strengths };
+}
+
+function parseChips(raw: any): EvidenceChip[] {
+  const arr = Array.isArray(raw) ? raw : [];
+  return arr
+    .map((c: any) => {
       const kindRaw = String(c.kind ?? "neutral");
       const kind: EvidenceChip["kind"] =
         kindRaw === "stat-bad" || kindRaw === "stat-good" ? kindRaw : "neutral";
@@ -618,13 +764,8 @@ function parsePriorities(rawText: string, max: number): PriorityBody[] {
         label: String(c.label ?? "").trim(),
         kind,
       };
-    }).filter((c: EvidenceChip) => c.key && c.label);
-    if (!title || !problem || !solution) continue;
-    out.push({ title, problem, solution, tier, evidence_chips });
-    if (out.length === max) break;
-  }
-  if (out.length === 0) throw new Error("no usable priorities returned");
-  return out;
+    })
+    .filter((c: EvidenceChip) => c.key && c.label);
 }
 
 function leadChipKey(p: PriorityBody): string | null {

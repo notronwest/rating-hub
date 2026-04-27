@@ -45,6 +45,7 @@ import {
 } from "../lib/reviewTopics";
 import CommonThemesPanel from "../components/report/CommonThemesPanel";
 import PrioritiesPanel from "../components/report/PrioritiesPanel";
+import StrengthsPanel from "../components/report/StrengthsPanel";
 
 // Thresholds: something is a "recurring theme" when it appears in this many
 // games. Two games is enough of a pattern to call out — anything lower is
@@ -458,6 +459,10 @@ function PlayerSessionReport({
           older Common Themes panel further down the page. */}
       <PrioritiesPanel sessionId={session.id} playerId={player.id} />
 
+      {/* What you're doing well — 1–3 strengths surfaced alongside
+          priorities so the report isn't all "things to fix". */}
+      <StrengthsPanel sessionId={session.id} playerId={player.id} />
+
       {/* Coach notes across all games — quoted in order so the player
           reads the session's takeaways before the numbers. */}
       {(() => {
@@ -556,7 +561,7 @@ function PlayerSessionReport({
             {perGame.map(({ bundle, gp }) => (
               <Link
                 key={bundle.game.id}
-                to={`/org/${orgId}/games/${bundle.game.id}/report?playerId=${player.id}`}
+                to={`/org/${orgId}/games/${bundle.game.id}`}
                 style={perGameChipStyle}
               >
                 <span style={{ color: "#888", fontSize: 10, marginRight: 6 }}>
@@ -659,7 +664,7 @@ function PlayerSessionReport({
             return (
               <Link
                 key={bundle.game.id}
-                to={`/org/${orgId}/games/${bundle.game.id}/report?playerId=${player.id}`}
+                to={`/org/${orgId}/games/${bundle.game.id}`}
                 style={perGameCardStyle}
               >
                 <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
