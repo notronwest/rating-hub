@@ -14,6 +14,8 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { supabase } from "../supabase";
 import { useAuth } from "../auth/AuthProvider";
+// Game-suffix parser shared across surfaces — matches gm-N, GmN, Game NN.
+import { parseGameIdx as extractGameIdx } from "../lib/sessionGames";
 
 type Mode = "stats" | "analyze" | "review";
 
@@ -52,16 +54,6 @@ interface SiblingGame {
   session_name: string | null;
 }
 
-/**
- * Extract the `gm-N` numeric suffix from a game's session_name.
- * e.g. `kr-do-pk-2026-04-19-gm-3` → 3. Returns null if no suffix.
- * Same helper the Session page uses so the two surfaces agree.
- */
-function extractGameIdx(sessionName: string | null): number | null {
-  if (!sessionName) return null;
-  const m = sessionName.match(/gm-(\d+)$/i);
-  return m ? parseInt(m[1], 10) : null;
-}
 
 export default function GameHeader({
   orgId,

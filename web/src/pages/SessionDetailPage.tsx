@@ -5,6 +5,7 @@ import { useAuth } from "../auth/AuthProvider";
 import { computeHighlights, GameHighlightsCompact, type GameHighlightData } from "../components/GameHighlights";
 import type { GamePlayerShotType } from "../types/database";
 import EmailRatingReportsPanel from "../components/report/EmailRatingReportsPanel";
+import { parseGameIdx as extractGameIdx } from "../lib/sessionGames";
 
 interface SessionInfo {
   id: string;
@@ -33,15 +34,6 @@ interface GamePlayerInfo {
   shot_accuracy: unknown;
 }
 
-/**
- * Extract the `gm-N` numeric suffix from a game's session_name.
- * e.g. `kr-do-pk-2026-04-19-gm-3` → 3. Returns null if no suffix.
- */
-function extractGameIdx(sessionName: string | null): number | null {
-  if (!sessionName) return null;
-  const m = sessionName.match(/gm-(\d+)$/i);
-  return m ? parseInt(m[1], 10) : null;
-}
 
 export default function SessionDetailPage() {
   const { orgId, sessionId } = useParams();

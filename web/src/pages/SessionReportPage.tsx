@@ -42,6 +42,7 @@ import {
 } from "../lib/reviewTopics";
 import PrioritiesPanel from "../components/report/PrioritiesPanel";
 import StrengthsPanel from "../components/report/StrengthsPanel";
+import { parseGameIdx as extractGameIdx } from "../lib/sessionGames";
 
 interface SessionRow {
   id: string;
@@ -69,12 +70,6 @@ interface GameBundle {
   topicRecs: TopicRecommendationRow[];
 }
 
-/** Pull `gm-N` out of PB Vision's session_name suffix. Matches SessionDetail. */
-function extractGameIdx(sessionName: string | null | undefined): number | null {
-  if (!sessionName) return null;
-  const m = sessionName.match(/gm-(\d+)/i);
-  return m ? parseInt(m[1], 10) : null;
-}
 
 export default function SessionReportPage() {
   const { orgId, sessionId } = useParams();

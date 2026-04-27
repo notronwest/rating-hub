@@ -26,6 +26,7 @@ import {
   PlayerRatingReportBody,
   type PlayerRow,
 } from "../../pages/PlayerRatingReportPage";
+import { gameSortKey } from "../../lib/sessionGames";
 
 interface GameLite {
   id: string;
@@ -225,20 +226,6 @@ export default function PlayerRatingReportEmbed({
   );
 }
 
-function parseGameIdx(name: string | null | undefined): number | null {
-  if (!name) return null;
-  // Two formats coexist: raw PBV "gm-N" and pre-prettied "Game 06".
-  const gm = name.match(/gm-(\d+)/i);
-  if (gm) return parseInt(gm[1], 10);
-  const game = name.match(/\bGame\s+0*(\d+)/i);
-  if (game) return parseInt(game[1], 10);
-  return null;
-}
-
-/** Composite sort key used for ordering games across + within sessions.
- *  Lexically sortable (date is YYYY-MM-DD, idx is zero-padded). */
-function gameSortKey(g: { played_at: string; session_name: string | null }): string {
-  const date = (g.played_at ?? "").slice(0, 10); // YYYY-MM-DD
-  const idx = parseGameIdx(g.session_name) ?? 0;
-  return `${date}|${String(idx).padStart(4, "0")}`;
-}
+// `parseGameIdx` and `gameSortKey` moved to `lib/sessionGames` so the
+// session-detail / session-report / GameHeader views all parse the
+// older `Gm1`-style session_names consistently.
