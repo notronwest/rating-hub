@@ -276,25 +276,46 @@ function Toolbar({
         ← Back to session
       </Link>
       {selectedId && (
-        <Link
-          to={`/org/${orgId}/sessions/${sessionId}/present?playerId=${selectedId}`}
-          title="Walk this player through the whole session: priorities, strengths, then per-game flagged moments"
-          style={{
-            padding: "4px 10px",
-            fontSize: 11,
-            fontWeight: 700,
-            background: "#7c3aed",
-            color: "#fff",
-            border: "1px solid #7c3aed",
-            borderRadius: 12,
-            textDecoration: "none",
-            fontFamily: "inherit",
-            letterSpacing: 0.3,
-            textTransform: "uppercase",
-          }}
-        >
-          ▶ Present
-        </Link>
+        <>
+          <Link
+            to={`/org/${orgId}/sessions/${sessionId}/coach-review?playerId=${selectedId}`}
+            title="Coach review: priorities, strengths, session-wide review queue"
+            style={{
+              padding: "4px 10px",
+              fontSize: 11,
+              fontWeight: 700,
+              background: "#0d904f",
+              color: "#fff",
+              border: "1px solid #0d904f",
+              borderRadius: 12,
+              textDecoration: "none",
+              fontFamily: "inherit",
+              letterSpacing: 0.3,
+              textTransform: "uppercase",
+            }}
+          >
+            🎯 Review
+          </Link>
+          <Link
+            to={`/org/${orgId}/sessions/${sessionId}/present?playerId=${selectedId}`}
+            title="Walk this player through the whole session: priorities, strengths, then per-game flagged moments"
+            style={{
+              padding: "4px 10px",
+              fontSize: 11,
+              fontWeight: 700,
+              background: "#7c3aed",
+              color: "#fff",
+              border: "1px solid #7c3aed",
+              borderRadius: 12,
+              textDecoration: "none",
+              fontFamily: "inherit",
+              letterSpacing: 0.3,
+              textTransform: "uppercase",
+            }}
+          >
+            ▶ Present
+          </Link>
+        </>
       )}
       <span style={{ flex: 1 }} />
       <span style={{ fontSize: 12, color: "#666" }}>Player:</span>

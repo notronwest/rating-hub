@@ -380,7 +380,14 @@ export default function SessionDetailPage() {
                   <span style={{ marginLeft: 12 }}>Avg: {p.avgRating.toFixed(2)}</span>
                 </div>
               </Link>
-              <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+              <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                <Link
+                  to={`/org/${orgId}/sessions/${session.id}/coach-review?playerId=${p.id}`}
+                  style={sessionActionStyle("#0d904f")}
+                  title="Coach review: priorities, strengths, session-wide review queue"
+                >
+                  🎯 Review
+                </Link>
                 <Link
                   to={`/org/${orgId}/sessions/${session.id}/report?playerId=${p.id}`}
                   style={sessionActionStyle("#1a73e8")}
