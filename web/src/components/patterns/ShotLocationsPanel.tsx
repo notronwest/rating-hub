@@ -39,6 +39,10 @@ export interface ShotLocationsPanelProps {
   /** If set, the panel opens pre-filtered to this player. The coach can still
    *  toggle back to team/all by clicking the selection. */
   defaultPlayerIdx?: number | null;
+  /** Render Deep / Mid / Short depth bands on the court. Coaches use this
+   *  to read serve and return placement at a glance — only meaningful for
+   *  shots that target the opposing service court. */
+  showDepthBands?: boolean;
   onClose: () => void;
 }
 
@@ -52,6 +56,7 @@ export default function ShotLocationsPanel({
   shotFilter,
   subTypes,
   defaultPlayerIdx = null,
+  showDepthBands = false,
   onClose,
 }: ShotLocationsPanelProps) {
   const rallyById = useMemo(
@@ -324,6 +329,7 @@ export default function ShotLocationsPanel({
             onDotHover={setHover}
             activeDotId={hover?.id ?? null}
             width={540}
+            showDepthBands={showDepthBands}
           />
           <div style={{ fontSize: 11, color: "#888" }}>
             Showing {dots.length} of {baseShots.length} shots

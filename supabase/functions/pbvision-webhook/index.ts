@@ -442,6 +442,21 @@ async function importSession(
     }
   }
 
+  // Per-shot geometry from augmented insights — contact / landing coords,
+  // trajectory, speed, height-over-net, player positions, etc. The bulk
+  // sync script (scripts/reimport-shot-geometry.mjs) does the same thing
+  // for back-fill; this keeps every webhook-imported game current going
+  // forward so the Patterns Toolbar / Coach Review tools have data to
+  // work with on the first load.
+  if (augmentedJson?.rallies?.length > 0) {
+    const geomUpdated = await updatePerShotGeometry(
+      supabase,
+      gameId,
+      augmentedJson.rallies,
+    );
+    console.log(`[webhook] geometry: updated ${geomUpdated} shots`);
+  }
+
   // Refresh aggregates
   for (const pid of playerIds) {
     if (!pid) continue;
@@ -620,3 +635,108 @@ Deno.serve(async (req) => {
     );
   }
 });
+
+// ---------------------------------------------------------------------------
+// Per-shot geometry extractor — mirrors web/src/lib/importPbVision.ts so the
+// webhook produces the same row shape as the in-browser augmented import.
+// Matches by (rally_index, shot_index), which are stable across compact and
+// augmented formats.
+// ---------------------------------------------------------------------------
+
+// deno-lint-ignore no-explicit-any
+function buildShotPatch(shot: any): Record<string, unknown> | null {
+  const rbm = shot.resulting_ball_movement;
+  const traj = rbm?.trajectory;
+  const start = traj?.start?.location;
+  const end = traj?.end?.location;
+  const patch: Record<string, unknown> = {};
+
+  if (start?.x != null) patch.contact_x = start.x;
+  if (start?.y != null) patch.contact_y = start.y;
+  if (start?.z != null) patch.contact_z = start.z;
+  if (end?.x != null) patch.land_x = end.x;
+  if (end?.y != null) patch.land_y = end.y;
+  if (end?.z != null) patch.land_z = end.z;
+  if (rbm?.speed != null) patch.speed_mph = rbm.speed;
+  if (rbm?.height_over_net != null) patch.height_over_net = rbm.height_over_net;
+  if (rbm?.distance != null) patch.distance_ft = rbm.distance;
+  if (rbm?.distance_from_baseline != null) {
+    patch.distance_from_baseline = rbm.distance_from_baseline;
+  }
+  if (rbm?.angles?.direction) patch.ball_direction = rbm.angles.direction;
+  if (traj) patch.trajectory = traj;
+  if (shot.player_positions) patch.player_positions = shot.player_positions;
+  if (shot.advantage_scale) patch.advantage_scale = shot.advantage_scale;
+  if (shot.errors && Object.keys(shot.errors).length > 0) {
+    patch.shot_errors = shot.errors;
+  }
+  // Specialty flags override augmented's stroke-level shot_type so reset /
+  // passing / poach / putaway / speedup keep their semantic label.
+  let resolvedType: string | null = shot.shot_type ?? null;
+  if (shot.is_reset) resolvedType = "reset";
+  else if (shot.is_passing) resolvedType = "passing";
+  else if (shot.is_poach) resolvedType = "poach";
+  else if (shot.is_putaway) resolvedType = "putaway";
+  else if (shot.is_speedup) resolvedType = "speedup";
+  if (resolvedType) patch.shot_type = resolvedType;
+
+  return Object.keys(patch).length > 0 ? patch : null;
+}
+
+async function updatePerShotGeometry(
+  supabase: ReturnType<typeof createClient>,
+  gameId: string,
+  // deno-lint-ignore no-explicit-any
+  augRallies: any[],
+): Promise<number> {
+  const { data: rallies } = await supabase
+    .from("rallies")
+    .select("id, rally_index")
+    .eq("game_id", gameId)
+    .order("rally_index");
+  if (!rallies || rallies.length === 0) return 0;
+
+  const rallyIds = (rallies as Array<{ id: string; rally_index: number }>).map(
+    (r) => r.id,
+  );
+  const { data: shots } = await supabase
+    .from("rally_shots")
+    .select("id, rally_id, shot_index")
+    .in("rally_id", rallyIds);
+  if (!shots) return 0;
+
+  const rallyIdxById = new Map(
+    (rallies as Array<{ id: string; rally_index: number }>).map((r) => [
+      r.id,
+      r.rally_index,
+    ]),
+  );
+  const shotIdByKey = new Map<string, string>();
+  for (const s of shots as Array<{ id: string; rally_id: string; shot_index: number }>) {
+    const rIdx = rallyIdxById.get(s.rally_id);
+    if (rIdx == null) continue;
+    shotIdByKey.set(`${rIdx}:${s.shot_index}`, s.id);
+  }
+
+  let updated = 0;
+  for (let i = 0; i < augRallies.length; i++) {
+    const rally = augRallies[i];
+    const shotsArr = rally.shots ?? [];
+    for (let j = 0; j < shotsArr.length; j++) {
+      const shotId = shotIdByKey.get(`${i}:${j}`);
+      if (!shotId) continue;
+      const patch = buildShotPatch(shotsArr[j]);
+      if (!patch) continue;
+      const { error } = await supabase
+        .from("rally_shots")
+        .update(patch)
+        .eq("id", shotId);
+      if (error) {
+        console.warn(`[webhook] shot ${i}.${j}: ${error.message}`);
+        continue;
+      }
+      updated++;
+    }
+  }
+  return updated;
+}

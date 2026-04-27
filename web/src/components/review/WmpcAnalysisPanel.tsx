@@ -292,12 +292,23 @@ export function TopicItem({ topic, isOpen, onToggle, playbackId, posterUrl, onSa
             minWidth: 90,
             fontSize: 13,
             fontWeight: 700,
-            color: pctColor,
+            color: topic.mode === "outcome" ? "#444" : pctColor,
             fontVariantNumeric: "tabular-nums",
           }}
         >
-          {topic.correct}/{topic.total}
-          <span style={{ fontSize: 11, color: "#999", marginLeft: 6 }}>{topic.pct}%</span>
+          {topic.mode === "outcome" ? (
+            <>
+              {topic.total}
+              <span style={{ fontSize: 11, color: "#999", marginLeft: 4, fontWeight: 500 }}>
+                {topic.total === 1 ? "rally" : "rallies"}
+              </span>
+            </>
+          ) : (
+            <>
+              {topic.correct}/{topic.total}
+              <span style={{ fontSize: 11, color: "#999", marginLeft: 6 }}>{topic.pct}%</span>
+            </>
+          )}
         </span>
         <span style={topicStatusChipStyle(addressed, topic.recommendation?.dismissed)}>
           {topic.recommendation?.dismissed
@@ -692,10 +703,20 @@ function TopicExpanded({ topic, playbackId, posterUrl, onSave, onAdvance, flagge
             currentId={current?.id ?? null}
             onSelect={handleSelect}
             flaggedRallyIds={flaggedRallyIds}
+            mode={topic.mode}
           />
 
           <div style={{ marginTop: 8, fontSize: 11, color: "#8a8a8a" }}>
-            💡 <b>Compare passes to fails</b> — what's happening on the good ones that isn't on the bad?
+            {topic.mode === "outcome" ? (
+              <>
+                💡 <b>Watch the rallies</b> — what tactics let one team take more
+                of these? Look for shot selection, positioning, who initiated.
+              </>
+            ) : (
+              <>
+                💡 <b>Compare passes to fails</b> — what's happening on the good ones that isn't on the bad?
+              </>
+            )}
           </div>
         </div>
 
@@ -720,7 +741,14 @@ function TopicExpanded({ topic, playbackId, posterUrl, onSave, onAdvance, flagge
           <div style={panelCardStyle}>
             <h4 style={panelHeadStyle}>
               Overall note
-              <span style={panelHintStyle}>· applies to all {topic.total} attempts</span>
+              <span style={panelHintStyle}>
+                · applies to all {topic.total}{" "}
+                {topic.mode === "outcome"
+                  ? topic.total === 1
+                    ? "rally"
+                    : "rallies"
+                  : "attempts"}
+              </span>
             </h4>
             <textarea
               value={draftRec}

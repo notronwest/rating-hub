@@ -185,6 +185,7 @@ export default function PatternsToolbar({ shots, rallies, players, selectedPlaye
           players={players}
           shotFilter={(s) => s.shot_index === 0 || s.shot_type === "serve"}
           defaultPlayerIdx={selectedPlayerIdx}
+          showDepthBands
           onClose={() => setOpenPanel(null)}
         />
       )}
@@ -196,6 +197,7 @@ export default function PatternsToolbar({ shots, rallies, players, selectedPlaye
           players={players}
           shotFilter={(s) => s.shot_index === 1 || s.shot_type === "return"}
           defaultPlayerIdx={selectedPlayerIdx}
+          showDepthBands
           onClose={() => setOpenPanel(null)}
         />
       )}

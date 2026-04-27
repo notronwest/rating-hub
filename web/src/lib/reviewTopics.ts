@@ -22,6 +22,7 @@ import {
   type CoverageEvent,
   type PlayerCoverageSummary,
 } from "./defensiveBeats";
+import { analyzePoachOpportunities } from "./poachAwareness";
 import type { RallyShot } from "../types/database";
 
 /** Stable id used as the DB key for recommendations.
@@ -42,6 +43,24 @@ export interface TopicInstance {
   note?: string;
 }
 
+/** How a topic frames its instances:
+ *
+ *  - `skill` (default) — pass/fail per attempt. The coach is grading
+ *    execution: "did you reach the kitchen", "did you poach", etc.
+ *    Header shows X/Y with a percentage. Filter chips read All / Passes
+ *    / Fails. Tiles colored green (pass) / red (fail). Topic counts
+ *    toward "addressed" only when a recommendation is saved.
+ *
+ *  - `outcome` — watch-the-rallies framing. The coach isn't grading the
+ *    player; they're reviewing what happened across a set of rallies
+ *    to understand tactics. Header shows just the rally count. Filter
+ *    chips read All / Wins / Losses. Tiles still tint green/red so the
+ *    coach can spot won-vs-lost patterns, but there's no "pass/fail"
+ *    judgement language. Used by rally-outcome stats — Long rallies,
+ *    Medium rallies, etc. — where every rally is a coachable unit
+ *    regardless of who won. */
+export type TopicMode = "skill" | "outcome";
+
 export interface ReviewTopic {
   id: TopicId;
   section: "script" | "beats";
@@ -54,6 +73,8 @@ export interface ReviewTopic {
   instances: TopicInstance[];
   /** Recommendation + dismiss state from DB — null if nothing saved yet. */
   recommendation: TopicRecommendation | null;
+  /** Defaults to `skill` when omitted. */
+  mode?: TopicMode;
 }
 
 export interface TopicRecommendation {
@@ -130,6 +151,10 @@ export function buildReviewTopics(args: {
     (c) => c.player.id === player.id,
   );
 
+  // Net poach awareness — needs the same shots/rallies/players inputs.
+  const poach = analyzePoachOpportunities(shots, rallies, players);
+  const myPoach = poach.find((p) => p.player.id === player.id);
+
   const pct = (c: number, t: number) => (t > 0 ? Math.round((c / t) * 100) : 0);
 
   const topics: ReviewTopic[] = [];
@@ -185,6 +210,22 @@ export function buildReviewTopics(args: {
       pct: pct(mine.fourthVolley.correct, mine.fourthVolley.total),
       instances: scriptCounterToInstances(mine.fourthVolley, "fourth"),
       recommendation: recommendationsByTopic.get("script.fourth_volley") ?? null,
+    });
+  }
+
+  if (myPoach && myPoach.poach.total > 0) {
+    topics.push({
+      id: "script.poach_awareness",
+      section: "script",
+      icon: "⚡",
+      title: "Net poach awareness",
+      subtitle:
+        "Already at the kitchen — pounce on the 3rd or let your partner play it?",
+      correct: myPoach.poach.correct,
+      total: myPoach.poach.total,
+      pct: pct(myPoach.poach.correct, myPoach.poach.total),
+      instances: scriptCounterToInstances(myPoach.poach, "poach"),
+      recommendation: recommendationsByTopic.get("script.poach_awareness") ?? null,
     });
   }
 

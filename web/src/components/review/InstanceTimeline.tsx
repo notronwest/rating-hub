@@ -5,7 +5,7 @@
  * passes?" coaching prompt.
  */
 import { useState, type CSSProperties } from "react";
-import type { TopicInstance } from "../../lib/reviewTopics";
+import type { TopicInstance, TopicMode } from "../../lib/reviewTopics";
 
 interface Props {
   instances: TopicInstance[];
@@ -14,6 +14,10 @@ interface Props {
   /** Rally ids the coach already flagged in Analyze — tiles in this set get
    *  a small flag badge so they aren't double-reviewed. */
   flaggedRallyIds?: Set<string>;
+  /** "skill" (default) frames as Pass/Fail per attempt. "outcome" frames as
+   *  Won/Lost — used by rally-outcome stats where the coach is reviewing
+   *  team tactics rather than grading execution. */
+  mode?: TopicMode;
 }
 
 type Filter = "all" | "pass" | "fail";
@@ -23,10 +27,16 @@ export default function InstanceTimeline({
   currentId,
   onSelect,
   flaggedRallyIds,
+  mode = "skill",
 }: Props) {
   const [filter, setFilter] = useState<Filter>("all");
   const passCount = instances.filter((i) => i.passed).length;
   const failCount = instances.length - passCount;
+  const isOutcome = mode === "outcome";
+  // Outcome topics talk about wins/losses, not pass/fail.
+  const labels = isOutcome
+    ? { positive: "Won", negative: "Lost", positivePlural: "wins", negativePlural: "losses", filterPos: "Wins", filterNeg: "Losses" }
+    : { positive: "Pass", negative: "Fail", positivePlural: "passes", negativePlural: "fails", filterPos: "Passes", filterNeg: "Fails" };
   // Sort chronologically by rally index — gives a natural playbook feel
   const ordered = [...instances].sort((a, b) => a.rallyIndex - b.rallyIndex);
 
@@ -48,11 +58,11 @@ export default function InstanceTimeline({
           color: "#666",
         }}
       >
-        <b style={{ color: "#222" }}>Instances</b>
+        <b style={{ color: "#222" }}>{isOutcome ? "Rallies" : "Instances"}</b>
         <span>
           {instances.length} total ·{" "}
-          <span style={{ color: "#c62828" }}>{failCount} fails</span> ·{" "}
-          <span style={{ color: "#1e7e34" }}>{passCount} passes</span>
+          <span style={{ color: "#c62828" }}>{failCount} {labels.negativePlural}</span> ·{" "}
+          <span style={{ color: "#1e7e34" }}>{passCount} {labels.positivePlural}</span>
         </span>
         <span style={{ flex: 1 }} />
         <div
@@ -82,7 +92,7 @@ export default function InstanceTimeline({
                 textTransform: "capitalize",
               }}
             >
-              {f === "all" ? "All" : f === "pass" ? "Passes" : "Fails"}
+              {f === "all" ? "All" : f === "pass" ? labels.filterPos : labels.filterNeg}
             </button>
           ))}
         </div>
@@ -117,7 +127,7 @@ export default function InstanceTimeline({
                 ...tileStyle(it.passed, isCurrent, matches),
                 position: "relative",
               }}
-              title={`Rally ${it.rallyIndex + 1} · ${it.passed ? "pass" : "fail"}${isFlagged ? " · flagged in Analyze" : ""}${it.note ? " · " + it.note : ""}`}
+              title={`Rally ${it.rallyIndex + 1} · ${it.passed ? labels.positive.toLowerCase() : labels.negative.toLowerCase()}${isFlagged ? " · flagged in Analyze" : ""}${it.note ? " · " + it.note : ""}`}
             >
               {isFlagged && (
                 <span

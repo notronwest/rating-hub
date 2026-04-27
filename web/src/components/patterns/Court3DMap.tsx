@@ -50,6 +50,11 @@ interface Props {
   onDotHover?: (dot: CourtDot3D | null) => void;
   activeDotId?: string | null;
   width?: number;
+  /** Render Deep / Mid / Short depth bands on the service-court half of
+   *  each side. Used by the Serve and Return Locations panels so coaches
+   *  can read a dot's classification at a glance — band ranges match
+   *  PB Vision's `trajectory.end.zone` ("deep", "medium", "shallow"). */
+  showDepthBands?: boolean;
   style?: CSSProperties;
 }
 
@@ -93,6 +98,7 @@ export default function Court3DMap({
   onDotHover,
   activeDotId,
   width = 520,
+  showDepthBands = false,
   style,
 }: Props) {
   // Derive view-box bounds from the court + margins.
@@ -147,6 +153,43 @@ export default function Court3DMap({
   const kitchenFar = hline(KITCHEN_FAR);
   const kitchenNear = hline(KITCHEN_NEAR);
 
+  // Depth bands — split each side's service court (baseline ↔ kitchen line)
+  // into three equal-third bands matching PB Vision's deep / medium /
+  // shallow classification. Far side service court: y ∈ [0, 15] with
+  // y=0 at baseline (deep) and y=15 at kitchen line (shallow). Near side
+  // mirrors that: y ∈ [29, 44] with y=44 at baseline (deep), y=29 at
+  // kitchen line (shallow). Each band is 5ft tall.
+  const FAR_SERVICE_TOP = 0;
+  const FAR_SERVICE_BOTTOM = KITCHEN_FAR; // 15
+  const NEAR_SERVICE_TOP = KITCHEN_NEAR;  // 29
+  const NEAR_SERVICE_BOTTOM = COURT_L;    // 44
+  const FAR_BAND_H = (FAR_SERVICE_BOTTOM - FAR_SERVICE_TOP) / 3;
+  const NEAR_BAND_H = (NEAR_SERVICE_BOTTOM - NEAR_SERVICE_TOP) / 3;
+
+  // Far side bands (baseline at top of screen): deep first, then medium,
+  // then shallow next to the kitchen line.
+  const farBands = [
+    { y0: FAR_SERVICE_TOP, y1: FAR_SERVICE_TOP + FAR_BAND_H, label: "Deep", color: "#16a34a" },
+    { y0: FAR_SERVICE_TOP + FAR_BAND_H, y1: FAR_SERVICE_TOP + 2 * FAR_BAND_H, label: "Mid", color: "#f59e0b" },
+    { y0: FAR_SERVICE_TOP + 2 * FAR_BAND_H, y1: FAR_SERVICE_BOTTOM, label: "Short", color: "#ef4444" },
+  ];
+  // Near side bands (baseline at bottom of screen): shallow at the
+  // kitchen line, deep at the near baseline.
+  const nearBands = [
+    { y0: NEAR_SERVICE_TOP, y1: NEAR_SERVICE_TOP + NEAR_BAND_H, label: "Short", color: "#ef4444" },
+    { y0: NEAR_SERVICE_TOP + NEAR_BAND_H, y1: NEAR_SERVICE_TOP + 2 * NEAR_BAND_H, label: "Mid", color: "#f59e0b" },
+    { y0: NEAR_SERVICE_TOP + 2 * NEAR_BAND_H, y1: NEAR_SERVICE_BOTTOM, label: "Deep", color: "#16a34a" },
+  ];
+
+  function bandPoly(y0: number, y1: number) {
+    return [
+      proj(0, y0, 0),
+      proj(COURT_W, y0, 0),
+      proj(COURT_W, y1, 0),
+      proj(0, y1, 0),
+    ];
+  }
+
   // Kitchen fill polygons — shaded bands on each side of the net.
   const kitchenFarPoly = [
     proj(0, KITCHEN_FAR, 0),
@@ -179,6 +222,20 @@ export default function Court3DMap({
       {/* Court surface */}
       <path d={courtPath} fill="#e7ecea" stroke="#9aa2a0" strokeWidth={0.12} />
 
+      {/* Depth bands (only on serve / return panels). Drawn before kitchen
+          shading so the kitchen always reads as the strongest tint. */}
+      {showDepthBands && [...farBands, ...nearBands].map((b, i) => (
+        <path
+          key={`band-${i}`}
+          d={polyD(bandPoly(b.y0, b.y1))}
+          fill={b.color}
+          fillOpacity={0.12}
+          stroke={b.color}
+          strokeWidth={0.04}
+          strokeOpacity={0.45}
+        />
+      ))}
+
       {/* Kitchen shading */}
       <path d={polyD(kitchenFarPoly)} fill="#d6ded9" />
       <path d={polyD(kitchenNearPoly)} fill="#d6ded9" />
@@ -190,6 +247,28 @@ export default function Court3DMap({
       {/* Center T-lines */}
       <line x1={tLineFar.a.sx} y1={tLineFar.a.sy} x2={tLineFar.b.sx} y2={tLineFar.b.sy} stroke="#9aa2a0" strokeWidth={0.1} />
       <line x1={tLineNear.a.sx} y1={tLineNear.a.sy} x2={tLineNear.b.sx} y2={tLineNear.b.sy} stroke="#9aa2a0" strokeWidth={0.1} />
+
+      {/* Depth band labels — placed near the right sideline of each band
+          so they ride alongside the dots without obscuring the court. */}
+      {showDepthBands && [...farBands, ...nearBands].map((b, i) => {
+        const yMid = (b.y0 + b.y1) / 2;
+        const p = proj(COURT_W - 0.6, yMid, 0);
+        return (
+          <text
+            key={`band-lbl-${i}`}
+            x={p.sx}
+            y={p.sy + 0.4}
+            fontSize={1.3}
+            textAnchor="end"
+            fontWeight={700}
+            fill={b.color}
+            fillOpacity={0.85}
+            style={{ paintOrder: "stroke", stroke: "#fff", strokeWidth: 0.25, strokeLinejoin: "round" }}
+          >
+            {b.label}
+          </text>
+        );
+      })}
 
       {/* Net — drawn BEFORE arcs that land on the far side, but after the
           ground, so it correctly occludes shots grazing the net. Rendered at

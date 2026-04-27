@@ -554,8 +554,8 @@ export async function updateFlagFptm(
 
 // ─────────────────────────── Coaching themes (AI) ───────────────────────────
 
-/** A single "common theme" row on a session × player. Persisted in
- *  `player_coaching_themes`. */
+/** A single "common theme" or "top priority" row on a session × player.
+ *  Persisted in `player_coaching_themes` — both kinds share the table. */
 export interface CoachingTheme {
   id: string;
   org_id: string;
@@ -569,6 +569,27 @@ export interface CoachingTheme {
   edited: boolean;
   created_at: string;
   updated_at: string;
+  // Added in migrations 023 + 024:
+  kind: "theme" | "priority";
+  priority_rank: number | null;
+  evidence_chips: PriorityChip[];
+  pinned: boolean;
+  ai_original_title: string | null;
+  ai_original_problem: string | null;
+  ai_original_solution: string | null;
+  ai_model: string | null;
+  ai_generated_at: string | null;
+}
+
+/** Evidence chip on a priority — links the priority back to the stat or
+ *  signal that motivated it. The model picks chips from a fixed
+ *  vocabulary; first chip is the headline. */
+export interface PriorityChip {
+  key: string;
+  label: string;
+  /** "stat-bad" = deficit (red), "stat-good" = strength (green),
+   *  "neutral" = pointer / context (gray). */
+  kind: "stat-bad" | "stat-good" | "neutral";
 }
 
 export async function listCoachingThemes(
@@ -580,6 +601,7 @@ export async function listCoachingThemes(
     .select("*")
     .eq("session_id", sessionId)
     .eq("player_id", playerId)
+    .eq("kind", "theme") // priorities live in the same table; filter to themes only
     .order("order_idx");
   if (error) throw new Error(error.message);
   return (data ?? []) as CoachingTheme[];
@@ -604,6 +626,107 @@ export async function deleteCoachingTheme(id: string): Promise<void> {
     .delete()
     .eq("id", id);
   if (error) throw new Error(error.message);
+}
+
+// ─────────────────────────── Coaching priorities ───────────────────────────
+//
+// Priorities live in the same player_coaching_themes table as themes,
+// distinguished by `kind = 'priority'`. They have evidence_chips, a
+// priority_rank for ordering, a pinned flag, and ai_original_* snapshot
+// fields preserved across coach edits. Helpers here always filter by
+// kind so themes and priorities never bleed into each other.
+
+export async function listPriorities(
+  sessionId: string,
+  playerId: string,
+): Promise<CoachingTheme[]> {
+  const { data, error } = await supabase
+    .from("player_coaching_themes")
+    .select("*")
+    .eq("session_id", sessionId)
+    .eq("player_id", playerId)
+    .eq("kind", "priority")
+    .order("priority_rank");
+  if (error) throw new Error(error.message);
+  return (data ?? []) as CoachingTheme[];
+}
+
+/** Update title / problem / solution. Always flips edited=true and
+ *  source='coach' so the next regenerate skips this row. */
+export async function updatePriority(
+  id: string,
+  patch: Partial<Pick<CoachingTheme, "title" | "problem" | "solution">>,
+): Promise<void> {
+  const { error } = await supabase
+    .from("player_coaching_themes")
+    .update({ ...patch, edited: true, source: "coach" })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/** Toggle pinned. No edited flag flip — pinning isn't editing. */
+export async function setPriorityPinned(
+  id: string,
+  pinned: boolean,
+): Promise<void> {
+  const { error } = await supabase
+    .from("player_coaching_themes")
+    .update({ pinned })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/** Bulk re-rank — used by ↑/↓ and drag-reorder. Pass an array of
+ *  `{ id, priority_rank }` and we send each row's new rank. */
+export async function reorderPriorities(
+  rows: Array<{ id: string; priority_rank: number }>,
+): Promise<void> {
+  // Use sequential updates rather than upsert-many since the only
+  // changing field is priority_rank — keeps the SQL simple.
+  for (const row of rows) {
+    const { error } = await supabase
+      .from("player_coaching_themes")
+      .update({ priority_rank: row.priority_rank })
+      .eq("id", row.id);
+    if (error) throw new Error(error.message);
+  }
+}
+
+export async function deletePriority(id: string): Promise<void> {
+  const { error } = await supabase
+    .from("player_coaching_themes")
+    .delete()
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/** Calls the generate-priorities edge function. Returns the merged
+ *  set of priorities sorted by rank — pinned/edited rows kept, fresh
+ *  AI output filling the empty slots. */
+export async function generatePriorities(args: {
+  sessionId: string;
+  playerId: string;
+}): Promise<CoachingTheme[]> {
+  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-priorities`;
+  const secret = import.meta.env.VITE_COACH_AI_SECRET as string | undefined;
+  if (!secret) {
+    throw new Error(
+      "Coach AI is disabled — set VITE_COACH_AI_SECRET in web/.env.local.",
+    );
+  }
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${secret}`,
+    },
+    body: JSON.stringify(args),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body?.error ?? `Request failed (${res.status})`);
+  }
+  return (body.priorities ?? []) as CoachingTheme[];
 }
 
 // ─────────────────────────── Rating-report emails ───────────────────────────

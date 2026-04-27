@@ -75,6 +75,9 @@ interface RallyRow {
   winning_team: number | null;
   score_team0: number | null;
   score_team1: number | null;
+  /** Needed by StatReviewPanel's rally-length bucketing
+   *  (`stat.rally_win.short/medium/long`). */
+  shot_count: number | null;
 }
 
 type ReviewItemKind = "flag" | "sequence" | "loss";
@@ -197,7 +200,7 @@ export default function CoachReviewPage() {
         supabase
           .from("rallies")
           .select(
-            "id, rally_index, start_ms, end_ms, winning_team, score_team0, score_team1",
+            "id, rally_index, start_ms, end_ms, winning_team, score_team0, score_team1, shot_count",
           )
           .eq("game_id", gameId)
           .order("rally_index"),

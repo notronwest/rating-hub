@@ -23,6 +23,7 @@ import type {
   ReviewTopic,
   TopicId,
   TopicInstance,
+  TopicMode,
   TopicRecommendation,
 } from "./reviewTopics";
 
@@ -283,6 +284,14 @@ export function buildStatReviewTopic(args: {
   const total = instances.length;
   const pct = total > 0 ? Math.round((correct / total) * 100) : 0;
 
+  // Rally-outcome stats reframe as "watch the rallies" rather than
+  // pass/fail per attempt — coach is reviewing team tactics, not
+  // grading execution. Every rally still gets a green-won / red-lost
+  // tint for at-a-glance team-vs-team signal.
+  const mode: TopicMode = args.statKey.startsWith("stat.rally_win")
+    ? "outcome"
+    : "skill";
+
   return {
     id: args.statKey as TopicId,
     section: "script", // unused for stat reviews; satisfies the type
@@ -294,6 +303,7 @@ export function buildStatReviewTopic(args: {
     pct,
     instances,
     recommendation: args.recommendation ?? null,
+    mode,
   };
 }
 

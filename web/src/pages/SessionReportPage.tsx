@@ -44,6 +44,7 @@ import {
   type TopicRecommendation,
 } from "../lib/reviewTopics";
 import CommonThemesPanel from "../components/report/CommonThemesPanel";
+import PrioritiesPanel from "../components/report/PrioritiesPanel";
 
 // Thresholds: something is a "recurring theme" when it appears in this many
 // games. Two games is enough of a pattern to call out — anything lower is
@@ -451,6 +452,11 @@ function PlayerSessionReport({
           </div>
         </div>
       </header>
+
+      {/* Top priorities — the hero block above everything else.
+          Drives the "what to work on next" conversation; demotes the
+          older Common Themes panel further down the page. */}
+      <PrioritiesPanel sessionId={session.id} playerId={player.id} />
 
       {/* Coach notes across all games — quoted in order so the player
           reads the session's takeaways before the numbers. */}
