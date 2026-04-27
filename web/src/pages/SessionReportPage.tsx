@@ -1,20 +1,17 @@
 /**
  * SessionReportPage — rolls up every game in a session into one per-player
- * coaching report, with a "recurring themes" panel that surfaces patterns
- * appearing across two or more games.
- *
- * The recurring-themes threshold is intentionally low (2 games) because two
- * repeats is enough signal that something is a habit rather than a one-off.
+ * coaching report.
  *
  * URL: /org/:orgId/sessions/:sessionId/report?playerId=...
  *
  * Sections:
  *   1. Cover — session label, date, player picker
- *   2. Stats rollup — average ratings + per-game strip + aggregate totals
- *   3. Recurring themes — FPTM sub-items, failing topics, repeated drills
- *   4. Per-game cards — link into each game's full report
+ *   2. Top priorities (hero) + Strengths
+ *   3. Coach's notes per game
+ *   4. Stats rollup — average ratings + per-game strip + aggregate totals
+ *   5. Per-game cards — link into each game's full data view
  *
- * Print-friendly (`window.print()` → PDF), matching the game report.
+ * Print-friendly (`window.print()` → PDF).
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -45,11 +42,6 @@ import {
 } from "../lib/reviewTopics";
 import PrioritiesPanel from "../components/report/PrioritiesPanel";
 import StrengthsPanel from "../components/report/StrengthsPanel";
-
-// Thresholds: something is a "recurring theme" when it appears in this many
-// games. Two games is enough of a pattern to call out — anything lower is
-// noise, anything higher is too conservative for a typical 3-4-game session.
-const RECURRING_THRESHOLD = 2;
 
 interface SessionRow {
   id: string;
@@ -289,46 +281,25 @@ function Toolbar({
         ← Back to session
       </Link>
       {selectedId && (
-        <>
-          <Link
-            to={`/org/${orgId}/sessions/${sessionId}/rating-report?playerId=${selectedId}`}
-            title="Switch to the data-only rating report for this session — stats, charts, auto bullets"
-            style={{
-              padding: "4px 10px",
-              fontSize: 11,
-              fontWeight: 700,
-              background: "#fff",
-              color: "#1a73e8",
-              border: "1px solid #1a73e8",
-              borderRadius: 12,
-              textDecoration: "none",
-              fontFamily: "inherit",
-              letterSpacing: 0.3,
-              textTransform: "uppercase",
-            }}
-          >
-            📊 Rating report
-          </Link>
-          <Link
-            to={`/org/${orgId}/sessions/${sessionId}/present?playerId=${selectedId}`}
-            title="Walk this player through the whole session: priorities, strengths, then per-game flagged moments"
-            style={{
-              padding: "4px 10px",
-              fontSize: 11,
-              fontWeight: 700,
-              background: "#7c3aed",
-              color: "#fff",
-              border: "1px solid #7c3aed",
-              borderRadius: 12,
-              textDecoration: "none",
-              fontFamily: "inherit",
-              letterSpacing: 0.3,
-              textTransform: "uppercase",
-            }}
-          >
-            ▶ Present
-          </Link>
-        </>
+        <Link
+          to={`/org/${orgId}/sessions/${sessionId}/present?playerId=${selectedId}`}
+          title="Walk this player through the whole session: priorities, strengths, then per-game flagged moments"
+          style={{
+            padding: "4px 10px",
+            fontSize: 11,
+            fontWeight: 700,
+            background: "#7c3aed",
+            color: "#fff",
+            border: "1px solid #7c3aed",
+            borderRadius: 12,
+            textDecoration: "none",
+            fontFamily: "inherit",
+            letterSpacing: 0.3,
+            textTransform: "uppercase",
+          }}
+        >
+          ▶ Present
+        </Link>
       )}
       <span style={{ flex: 1 }} />
       <span style={{ fontSize: 12, color: "#666" }}>Player:</span>
@@ -428,11 +399,6 @@ function PlayerSessionReport({
       gamesPlayed: perGame.length,
     };
   }, [perGame]);
-
-  const themes = useMemo(
-    () => computeRecurringThemes(perGame, playersById, player.id),
-    [perGame, playersById, player.id],
-  );
 
   return (
     <div className="sr-page" style={pageStyle}>
@@ -598,71 +564,6 @@ function PlayerSessionReport({
         </div>
       </Section>
 
-      {/* Recurring themes — the novel part */}
-      <Section title={`Recurring themes · appearing in ${RECURRING_THRESHOLD}+ games`}>
-        {themes.fptm.length === 0 && themes.topics.length === 0 && themes.drills.length === 0 ? (
-          <div style={{ color: "#888", fontSize: 13, fontStyle: "italic" }}>
-            Not enough repeated coaching signal yet. Keep reviewing — themes will surface once a
-            pattern shows up in {RECURRING_THRESHOLD} or more games.
-          </div>
-        ) : (
-          <div style={{ display: "grid", gap: 14 }}>
-            {themes.fptm.length > 0 && (
-              <ThemeBlock
-                heading="FPTM patterns"
-                subtitle="Specific coaching items the coach flagged on this player across multiple games"
-              >
-                {themes.fptm.map((theme) => (
-                  <ThemeRow
-                    key={`${theme.pillarId}:${theme.itemId ?? "_pillar"}`}
-                    label={theme.label}
-                    accent={theme.accent}
-                    count={theme.gameCount}
-                    gameLabels={theme.gameLabels}
-                    detail={theme.detail}
-                  />
-                ))}
-              </ThemeBlock>
-            )}
-
-            {themes.topics.length > 0 && (
-              <ThemeBlock
-                heading="Scripted-start topics that keep showing up"
-                subtitle="Review topics with coach content in multiple games — habits, not flukes"
-              >
-                {themes.topics.map((t) => (
-                  <ThemeRow
-                    key={t.topicId}
-                    label={t.title}
-                    accent="#d97706"
-                    count={t.gameCount}
-                    gameLabels={t.gameLabels}
-                    detail={t.detail}
-                  />
-                ))}
-              </ThemeBlock>
-            )}
-
-            {themes.drills.length > 0 && (
-              <ThemeBlock
-                heading="Drills prescribed multiple times"
-                subtitle="Practice cues the coach has written into ≥2 games — worth bringing into every practice"
-              >
-                {themes.drills.map((d, i) => (
-                  <ThemeRow
-                    key={i}
-                    label={d.text}
-                    accent="#1e7e34"
-                    count={d.gameCount}
-                    gameLabels={d.gameLabels}
-                  />
-                ))}
-              </ThemeBlock>
-            )}
-          </div>
-        )}
-      </Section>
-
       {/* Per-game cards */}
       <Section title="Games in this session">
         <div style={{ display: "grid", gap: 10 }}>
@@ -745,300 +646,6 @@ function PlayerSessionReport({
   );
 }
 
-// ─────────────────────── Recurring-themes aggregation ───────────────────────
-
-interface FptmTheme {
-  pillarId: string;
-  itemId: string | null; // null = pillar-level theme (no sub-item repeated)
-  label: string;
-  accent: string;
-  gameCount: number;
-  gameLabels: string[];
-  detail?: string;
-}
-
-interface TopicTheme {
-  topicId: TopicId;
-  title: string;
-  gameCount: number;
-  gameLabels: string[];
-  detail?: string;
-}
-
-interface DrillTheme {
-  text: string;
-  gameCount: number;
-  gameLabels: string[];
-}
-
-function computeRecurringThemes(
-  perGame: Array<{ bundle: GameBundle; gp: GamePlayer }>,
-  playersById: Map<string, PlayerRow>,
-  playerId: string,
-) {
-  // Walk every piece of coach content for this player across games, bucketing
-  // by theme key. Each bucket records the distinct set of games it touches.
-
-  const fptmBucket = new Map<
-    string,
-    {
-      pillarId: string;
-      itemId: string | null;
-      tone: string | null;
-      games: Set<number>;
-      gameLabels: string[];
-    }
-  >();
-  const topicBucket = new Map<
-    string,
-    {
-      topicId: TopicId;
-      title: string;
-      games: Set<number>;
-      gameLabels: string[];
-      pctSamples: Array<{ gameIdx: number; pct: number }>;
-    }
-  >();
-  const drillBucket = new Map<
-    string,
-    {
-      text: string;
-      games: Set<number>;
-      gameLabels: string[];
-    }
-  >();
-
-  function recordFptm(
-    fptm: FptmValue | null | undefined,
-    gameIdx: number,
-    gameLabel: string,
-  ) {
-    if (!fptm) return;
-    const summary = summarizeFptm(fptm);
-    for (const { pillar } of summary) {
-      const state = fptm[pillar.id];
-      if (!state) continue;
-      const tone = state.tone ?? null;
-      const items = state.items ?? [];
-      // Record each sub-item — those are the substantive repeats.
-      if (items.length > 0) {
-        for (const itemId of items) {
-          const key = `${pillar.id}:${itemId}`;
-          let b = fptmBucket.get(key);
-          if (!b) {
-            b = {
-              pillarId: pillar.id,
-              itemId,
-              tone,
-              games: new Set(),
-              gameLabels: [],
-            };
-            fptmBucket.set(key, b);
-          }
-          if (!b.games.has(gameIdx)) {
-            b.games.add(gameIdx);
-            b.gameLabels.push(gameLabel);
-          }
-        }
-      } else {
-        // Pillar toggled on without specifics — still worth surfacing.
-        const key = `${pillar.id}:_pillar`;
-        let b = fptmBucket.get(key);
-        if (!b) {
-          b = {
-            pillarId: pillar.id,
-            itemId: null,
-            tone,
-            games: new Set(),
-            gameLabels: [],
-          };
-          fptmBucket.set(key, b);
-        }
-        if (!b.games.has(gameIdx)) {
-          b.games.add(gameIdx);
-          b.gameLabels.push(gameLabel);
-        }
-      }
-    }
-  }
-
-  function recordDrill(
-    raw: string | null | undefined,
-    gameIdx: number,
-    gameLabel: string,
-  ) {
-    if (!raw) return;
-    // Break into "sentences" — short enough that a verbatim match across
-    // games catches repetition, long enough that common words don't group.
-    const lines = raw
-      .split(/[.\n;]+/)
-      .map((s) => s.trim())
-      .filter((s) => s.length > 8);
-    const seenThisGame = new Set<string>();
-    for (const line of lines) {
-      const key = line.toLowerCase();
-      if (seenThisGame.has(key)) continue;
-      seenThisGame.add(key);
-      let b = drillBucket.get(key);
-      if (!b) {
-        b = { text: line, games: new Set(), gameLabels: [] };
-        drillBucket.set(key, b);
-      }
-      if (!b.games.has(gameIdx)) {
-        b.games.add(gameIdx);
-        b.gameLabels.push(gameLabel);
-      }
-    }
-  }
-
-  for (const { bundle, gp: _gp } of perGame) {
-    const gameLabel = `G${bundle.gameIdx}`;
-    const gameIdx = bundle.gameIdx;
-
-    // Build the review topics for THIS game so we can read each topic's
-    // title + pass rate alongside the coach's recommendation.
-    const players = bundle.gamePlayers
-      .map((g) => {
-        const p = playersById.get(g.player_id);
-        if (!p) return null;
-        return {
-          id: g.player_id,
-          display_name: p.display_name,
-          player_index: g.player_index,
-          team: g.team,
-          avatar_url: p.avatar_url,
-        };
-      })
-      .filter((x): x is NonNullable<typeof x> => !!x);
-    const selfPlayer = players.find((p) => p.id === playerId);
-
-    if (selfPlayer) {
-      const recsForPlayer = bundle.topicRecs.filter((r) => r.player_id === playerId);
-      const recsByTopic = new Map<TopicId, TopicRecommendation>();
-      for (const r of recsForPlayer) {
-        recsByTopic.set(r.topic_id as TopicId, {
-          id: r.id,
-          recommendation: r.recommendation,
-          tags: r.tags,
-          dismissed: r.dismissed,
-          fptm: r.fptm,
-          drills: r.drills,
-          updated_at: r.updated_at,
-        });
-      }
-      const topics: ReviewTopic[] = buildReviewTopics({
-        player: selfPlayer,
-        shots: bundle.shots,
-        rallies: bundle.rallies,
-        players,
-        recommendationsByTopic: recsByTopic,
-      });
-
-      for (const t of topics) {
-        if (!t.recommendation) continue;
-        // Only addressed topics that aren't dismissed count as "covered"
-        // for the theme detector.
-        if (t.recommendation.dismissed) continue;
-        const hasContent =
-          !!t.recommendation.recommendation ||
-          !!t.recommendation.drills ||
-          (t.recommendation.fptm &&
-            Object.keys(t.recommendation.fptm as FptmValue).length > 0);
-        if (!hasContent) continue;
-        let b = topicBucket.get(t.id);
-        if (!b) {
-          b = {
-            topicId: t.id,
-            title: t.title,
-            games: new Set(),
-            gameLabels: [],
-            pctSamples: [],
-          };
-          topicBucket.set(t.id, b);
-        }
-        if (!b.games.has(gameIdx)) {
-          b.games.add(gameIdx);
-          b.gameLabels.push(gameLabel);
-          b.pctSamples.push({ gameIdx, pct: t.pct });
-        }
-        recordFptm(t.recommendation.fptm as FptmValue | null, gameIdx, gameLabel);
-        recordDrill(t.recommendation.drills, gameIdx, gameLabel);
-      }
-    }
-
-    // Flags + sequences owned by this player
-    const myShotIds = new Set(
-      bundle.shots
-        .filter((s) => selfPlayer && s.player_index === selfPlayer.player_index)
-        .map((s) => s.id),
-    );
-    for (const f of bundle.flags) {
-      if (!myShotIds.has(f.shot_id)) continue;
-      recordFptm(f.fptm as FptmValue | null, gameIdx, gameLabel);
-      recordDrill(f.drills, gameIdx, gameLabel);
-    }
-    for (const seq of bundle.sequences) {
-      const taggedMe =
-        seq.player_id === playerId || (seq.player_ids ?? []).includes(playerId);
-      if (!taggedMe) continue;
-      recordFptm(seq.fptm as FptmValue | null, gameIdx, gameLabel);
-      recordDrill(seq.drills, gameIdx, gameLabel);
-    }
-  }
-
-  const fptm: FptmTheme[] = Array.from(fptmBucket.values())
-    .filter((b) => b.games.size >= RECURRING_THRESHOLD)
-    .map((b) => {
-      const pillar = FPTM_PILLAR_BY_ID[b.pillarId as keyof typeof FPTM_PILLAR_BY_ID];
-      const item = b.itemId
-        ? pillar?.items.find((it) => it.id === b.itemId)
-        : null;
-      const tone = b.tone === "strength" ? "Strength" : "Needs work";
-      const label = item
-        ? `${pillar.letter} · ${pillar.label} — ${item.label}`
-        : `${pillar.letter} · ${pillar.label} (no specifics)`;
-      const accent = b.tone === "strength" ? "#1e7e34" : "#c62828";
-      return {
-        pillarId: b.pillarId,
-        itemId: b.itemId,
-        label,
-        accent,
-        gameCount: b.games.size,
-        gameLabels: b.gameLabels,
-        detail: tone,
-      };
-    })
-    .sort((a, b) => b.gameCount - a.gameCount);
-
-  const topics: TopicTheme[] = Array.from(topicBucket.values())
-    .filter((b) => b.games.size >= RECURRING_THRESHOLD)
-    .map((b) => {
-      const pctDetail = b.pctSamples
-        .sort((a, c) => a.gameIdx - c.gameIdx)
-        .map((s) => `G${s.gameIdx}: ${s.pct}%`)
-        .join(" · ");
-      return {
-        topicId: b.topicId,
-        title: b.title,
-        gameCount: b.games.size,
-        gameLabels: b.gameLabels,
-        detail: pctDetail,
-      };
-    })
-    .sort((a, b) => b.gameCount - a.gameCount);
-
-  const drills: DrillTheme[] = Array.from(drillBucket.values())
-    .filter((b) => b.games.size >= RECURRING_THRESHOLD)
-    .map((b) => ({
-      text: b.text,
-      gameCount: b.games.size,
-      gameLabels: b.gameLabels,
-    }))
-    .sort((a, b) => b.gameCount - a.gameCount)
-    .slice(0, 8);
-
-  return { fptm, topics, drills };
-}
 
 // ─────────────────────────── Subcomponents ───────────────────────────
 
@@ -1079,72 +686,6 @@ function Stat({
   );
 }
 
-function ThemeBlock({
-  heading,
-  subtitle,
-  children,
-}: {
-  heading: string;
-  subtitle: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <div style={{ fontSize: 12, fontWeight: 700, color: "#333" }}>{heading}</div>
-      <div style={{ fontSize: 11, color: "#888", marginBottom: 6 }}>{subtitle}</div>
-      <div style={{ display: "grid", gap: 6 }}>{children}</div>
-    </div>
-  );
-}
-
-function ThemeRow({
-  label,
-  accent,
-  count,
-  gameLabels,
-  detail,
-}: {
-  label: string;
-  accent: string;
-  count: number;
-  gameLabels: string[];
-  detail?: string;
-}) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-        padding: "8px 10px",
-        border: "1px solid #e2e2e2",
-        borderLeft: `3px solid ${accent}`,
-        borderRadius: 4,
-        background: "#fff",
-      }}
-    >
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, color: "#222", fontWeight: 500 }}>{label}</div>
-        {detail && (
-          <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>{detail}</div>
-        )}
-      </div>
-      <div
-        style={{
-          fontSize: 11,
-          fontWeight: 700,
-          color: accent,
-          background: `${accent}11`,
-          padding: "3px 8px",
-          borderRadius: 10,
-          whiteSpace: "nowrap",
-        }}
-      >
-        {count}× · {gameLabels.join(" · ")}
-      </div>
-    </div>
-  );
-}
 
 // ─────────────────────────── Styles ───────────────────────────
 
